@@ -42,25 +42,6 @@ O **WACRM** é uma plataforma completa de CRM para WhatsApp baseada em **Next.js
 
 ---
 
-## 2. O Que Foi Realizado Nesta Sessão
-
-### A. Resolução Completa dos 10 Pontos Prioritários da Auditoria (10/10)
-
-| # | Item Prioritário | Status | Como foi resolvido |
-|---|---|---|---|
-| **1** | **Bug de premature-success nos logs de automação** | ✅ Concluído | `src/lib/automations/engine.ts` — a função `hasOutstandingWait()` assegura que a automação só seja marcada como concluída se não houver ramificações pendentes de espera (`wait`). |
-| **2** | **Rate Limit no endpoint `/api/automations/engine`** | ✅ Concluído | `src/app/api/automations/engine/route.ts` — endpoint protegido por `checkRateLimit` com a constante `RATE_LIMITS.automationsEngine`. |
-| **3** | **Rate Limiter para Multi-instância (Upstash Redis)** | ✅ Concluído | `src/lib/rate-limit.ts` migrado para backend duplo via `@upstash/ratelimit` e `@upstash/redis`, com fallback automático para memória in-process caso as variáveis não estejam setadas. Todos os 35 call sites foram migrados para `await checkRateLimit(...)`. |
-| **4** | **Gatilhos mortos (`conversation_assigned` e `time_based`)** | ✅ Concluído | - `conversation_assigned`: Criado dispatcher único (`src/lib/conversations/assign.ts`) com proteção anti-loop infinito (`assign-chain.ts` com limite de profundidade 3).<br>- `time_based`: Desenvolvido `src/lib/automations/cron-matches.ts` utilizando `cron-parser` v5 para avaliar expressões cron e varredura periódica integrada em `/api/automations/cron`. |
-| **5** | **Spend ceiling na funcionalidade de IA** | ✅ Concluído | `src/lib/ai/auto-reply.ts` valida `monthlyReplyCount >= maxAutoRepliesPerAccountPerMonth()` antes do envio, bloqueando disparos excedentes. |
-| **6** | **Determinismo no dedupe de telefones** | ✅ Concluído | `src/lib/contacts/dedupe.ts:71` adicionado `.order("created_at", { ascending: true })` e logs explícitos de falhas em vez de supressão silenciosa. |
-| **7** | **Teto de requisição no knowledge-ingest de IA** | ✅ Concluído | `src/app/api/ai/knowledge/route.ts` valida `content.length > MAX_KNOWLEDGE_DOCUMENT_CHARS` retornando HTTP 400 em payloads excessivos. |
-| **8** | **Consolidação dos singletons do admin client** | ✅ Concluído | Centralizado em `src/lib/supabase/admin.ts` (`supabaseAdmin()`). Os 3 módulos legados (`ai`, `automations`, `flows`) reexportam esse único cliente. |
-| **9** | **Correção de DNS-rebinding no guard SSRF** | ✅ Concluído | `src/lib/webhooks/ssrf.ts` — implementada a função `resolveSsrfSafeDispatcher` que fixa o IP verificado via `undici Agent`, eliminando brechas de re-resolução de DNS. |
-| **10** | **Commit e verificação de colisão da Migration-043** | ✅ Concluído | Identificada a migration `043_zapi_provider.sql` sem nenhuma colisão; commits gerados e validados. |
-
----
-
 ### B. Integração do Provedor Z-API (WhatsApp Alternativo)
 - **Abstração de Provedor:** `src/lib/whatsapp/provider.ts` para intercalar entre Meta e Z-API de forma transparente para as mensagens e automações.
 - **Cliente Z-API:** `src/lib/whatsapp/zapi-api.ts` cobrindo envio de texto, mídia, checagem de status e conexão.
@@ -248,4 +229,46 @@ A análise dos logs do contêiner em produção (`docker logs --tail 100 wacrm`)
    - Extração de telefone abrangente (`body.phone`, `body.senderPhone`, `body.sender`, `body.chatId`).
    - Extração de conteúdo textual e mídia enriquecida (`body.text.message`, texto direto como string, `body.message.conversation`, stickers, localizações e contatos).
    - Testes unitários expandidos e validados via Vitest (13 testes passando).
+
+---
+
+## 9. Personalização Visual & Marca ("CRM Urbanisme")
+
+- Alterado o título na barra lateral (Sidebar) e telas de autenticação/cadastro de `"Modelo de CRM para WhatsApp"` para **`"CRM Urbanisme"`** em todos os idiomas suportados (`pt`, `en`, `es`, `ko`).
+- Atualizados os metadados globais da aplicação em `src/app/layout.tsx` (`title: "CRM Urbanisme"` e `description: "CRM Urbanisme para WhatsApp"`).
+- Deploy realizado em produção no contêiner da VPS Hostinger.
+
+---
+
+## 10. Identidade Visual Oficial Urbanisme & Design System (2026-09-19)
+
+### Elementos Gráficos e Cores da Marca:
+- **Extração da Logo:** Extraída da imagem oficial em alta definição sem perdas com fundo transparente:
+  - `public/urbanisme-logo-white.png`: Logo horizontal completa com o símbolo da marca e o texto "URBANISME" em branco translúcido de alto contraste para o tema escuro.
+  - `public/urbanisme-logo-dark.png`: Logo horizontal completa com texto grafite escuro (`#3B3B3B`) para superfícies claras.
+  - `public/urbanisme-icon.png` e `public/urbanisme-icon-white.png`: Ícone isolado do símbolo de "U" entrelaçado da Urbanisme.
+  - `src/app/icon.png` e `src/app/icon.tsx`: Favicon do navegador atualizado com as cores da marca.
+- **Paleta Cromática Oficial:**
+  - Verde Lima (Brand Primary): `#ADC902` (OKLCH: `oklch(0.77 0.19 125)`).
+  - Grafite Escuro / Charcoal (Primary Foreground): `#141517` / `#18191B` (garante contraste AAA > 10:1 sobre o verde lima).
+  - Verde Lima Hover: `oklch(0.72 0.18 125)`.
+  - Tema `urbanisme` configurado como padrão primário em `src/lib/themes.ts` e `src/app/globals.css`.
+
+### Telas Atualizadas:
+1. **Login (`/login`):**
+   - Logo centralizada em destaque (`urbanisme-logo-white.png`).
+   - "Bem-vindo de volta" reduzido para tipografia elegante (`text-base font-semibold tracking-tight`).
+   - "Entre na sua conta" posicionado logo abaixo em tom suave (`text-xs text-muted-foreground mt-0.5`).
+   - Botão de login na cor primária verde lima `#ADC902` com texto escuro e efeito de hover.
+2. **Cadastro (`/signup`) e Esqueci a Senha (`/forgot-password`):**
+   - Harmonizados com a mesma composição visual da logo e tipografia padronizada.
+3. **Barra Lateral (Sidebar):**
+   - Substituído o ícone genérico pelo símbolo oficial da Urbanisme (`urbanisme-icon.png`) em badge com borda e transparência da cor primária.
+
+---
+
+## 11. Aprendizados (DOE Protocol) — 2026-09-19
+- **Contraste de Acessibilidade (WCAG):** Em marcas com verde-limão vibrante como `#ADC902`, o texto sobreposto nunca deve ser branco (contraste ~1.7:1, ilegível), mas sim grafite escuro (`#141517`, contraste >10:1), conferindo ao mesmo tempo leitura perfeita e estética premium.
+- **Renderização Dark Mode:** Em cartões com fundo escuro (`bg-card`), o texto da marca extraído com cor grafite original fica camuflado; por isso, geramos uma versão onde o símbolo preserva o verde-limão e o wordmark ganha tom branco nítido (`urbanisme-logo-white.png`).
+- **Deploy Zero-Downtime:** A esteira de `git push` + `docker compose build` + `docker compose up -d` na VPS Hostinger preserva todos os containers de banco de dados e Traefik sem interrupção de SSL ou de serviço.
 
