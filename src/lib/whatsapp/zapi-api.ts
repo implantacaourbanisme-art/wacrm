@@ -184,6 +184,23 @@ export async function configureReceivedWebhook(
 }
 
 /**
+ * Configure all webhooks at once using Z-API's update-every-webhooks endpoint.
+ */
+export async function configureEveryWebhooks(
+  args: ConfigureWebhookArgs
+): Promise<void> {
+  const { webhookUrl, ...creds } = args
+  const response = await fetch(instanceUrl(creds, 'update-every-webhooks'), {
+    method: 'PUT',
+    headers: authHeaders(creds),
+    body: JSON.stringify({ value: webhookUrl }),
+  })
+  if (!response.ok) {
+    await throwZApiError(response, `Z-API error: ${response.status}`)
+  }
+}
+
+/**
  * Point the instance's "message status changed" webhook (delivery /
  * read receipts) at our endpoint — the sibling of
  * `configureReceivedWebhook` for the separate status-callback config

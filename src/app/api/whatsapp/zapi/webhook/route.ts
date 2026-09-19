@@ -385,7 +385,10 @@ async function processZApiWebhook(
   // Never ingest our own outbound sends echoed back, and never ingest
   // group traffic — this CRM's contact model is 1:1, same as Meta's
   // Cloud API (which never delivers group messages at all).
-  if (body.fromMe) return
+  if (body.fromMe) {
+    console.info('[zapi-webhook] skipping outbound echo (fromMe=true):', body.messageId, 'phone:', body.phone)
+    return
+  }
   if (body.isGroup) {
     console.info('[zapi-webhook] skipping group message:', body.messageId)
     return

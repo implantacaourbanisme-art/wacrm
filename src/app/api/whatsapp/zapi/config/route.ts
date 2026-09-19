@@ -6,6 +6,7 @@ import {
   getInstanceStatus,
   configureReceivedWebhook,
   configureMessageStatusWebhook,
+  configureEveryWebhooks,
   ZApiError,
 } from '@/lib/whatsapp/zapi-api'
 
@@ -114,11 +115,16 @@ export async function POST(request: Request) {
     const webhookUrl = `${webhookBaseUrl(request)}/api/whatsapp/zapi/webhook?token=${encodeURIComponent(clientToken)}`
     let webhookError: string | null = null
     try {
-      await configureReceivedWebhook({ instanceId, instanceToken, clientToken, webhookUrl })
-    } catch (err) {
-      webhookError =
-        err instanceof ZApiError ? err.message : 'Could not configure the Z-API webhook.'
-      console.error('[zapi/config] webhook registration failed:', webhookError)
+      await configureEveryWebhooks({ instanceId, instanceToken, clientToken, webhookUrl })
+    } catch {
+      // Fall back to configureReceivedWebhook if update-every-webhooks is unavailable
+      try {
+        await configureReceivedWebhook({ instanceId, instanceToken, clientToken, webhookUrl })
+      } catch (err) {
+        webhookError =
+          err instanceof ZApiError ? err.message : 'Could not configure the Z-API webhook.'
+        console.error('[zapi/config] webhook registration failed:', webhookError)
+      }
     }
     let statusWebhookError: string | null = null
     try {
