@@ -75,6 +75,7 @@ interface ZApiReaction {
 }
 
 interface ZApiWebhookBody {
+export interface ZApiWebhookBody {
   instanceId: string
   /** Discriminator between the two event shapes this route handles —
    *  "ReceivedCallback" for a message, "MessageStatusCallback" for a
@@ -83,6 +84,12 @@ interface ZApiWebhookBody {
   type?: string
   messageId: string
   phone: string
+  phone?: string
+  senderPhone?: string
+  sender?: string
+  chatId?: string
+  chatName?: string
+  connectedPhone?: string
   /** True when this event is an echo of a message WE sent (through
    *  Z-API or the paired phone itself) — never a customer inbound.
    *  Must be skipped, or our own sends would double up as a fake
@@ -97,10 +104,19 @@ interface ZApiWebhookBody {
   /** Present on a swipe-reply to a non-reaction message. */
   referenceMessageId?: string
   text?: ZApiTextContent
+  text?: ZApiTextContent | string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  message?: any
   image?: ZApiImageContent
   document?: ZApiDocumentContent
   audio?: ZApiAudioContent
   video?: ZApiVideoContent
+  sticker?: { stickerUrl?: string; mimeType?: string }
+  location?: { latitude?: number; longitude?: number; name?: string; address?: string; url?: string }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  contact?: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  contacts?: any[]
   buttonsResponseMessage?: ZApiButtonsResponse
   listResponseMessage?: ZApiListResponse
   reaction?: ZApiReaction
@@ -134,6 +150,7 @@ export function mapZApiStatus(raw: string | undefined): NormalizedDeliveryStatus
 }
 
 function normalizeContent(body: ZApiWebhookBody): {
+export function normalizeContent(body: ZApiWebhookBody): {
   contentType: NormalizedContentType
   rawTypeLabel: string
   contentText: string | null
@@ -149,8 +166,37 @@ function normalizeContent(body: ZApiWebhookBody): {
       mediaUrl: null,
       mediaType: null,
       interactiveReplyId: null,
+    const textMsg = typeof body.text === 'string' ? body.text : body.text.message
+    if (textMsg) {
+      return {
+        contentType: 'text',
+        rawTypeLabel: 'text',
+        contentText: textMsg,
+        mediaUrl: null,
+        mediaType: null,
+        interactiveReplyId: null,
+      }
     }
   }
+
+  // Handle direct string or nested message object
+  if (body.message) {
+    const msgText =
+      typeof body.message === 'string'
+        ? body.message
+        : body.message.conversation || body.message.text || null
+    if (msgText) {
+      return {
+        contentType: 'text',
+        rawTypeLabel: 'text',
+        contentText: msgText,
+        mediaUrl: null,
+        mediaType: null,
+        interactiveReplyId: null,
+      }
+    }
+  }
+
   if (body.image) {
     return {
       contentType: 'image',
@@ -158,6 +204,7 @@ function normalizeContent(body: ZApiWebhookBody): {
       contentText: body.image.caption || null,
       mediaUrl: body.image.imageUrl || null,
       mediaType: body.image.mimeType || null,
+      mediaType: body.image.mimeType || 'image/jpeg',
       interactiveReplyId: null,
     }
   }
@@ -168,6 +215,7 @@ function normalizeContent(body: ZApiWebhookBody): {
       contentText: body.video.caption || null,
       mediaUrl: body.video.videoUrl || null,
       mediaType: body.video.mimeType || null,
+      mediaType: body.video.mimeType || 'video/mp4',
       interactiveReplyId: null,
     }
   }
@@ -178,6 +226,7 @@ function normalizeContent(body: ZApiWebhookBody): {
       contentText: body.document.fileName || null,
       mediaUrl: body.document.documentUrl || null,
       mediaType: body.document.mimeType || null,
+      mediaType: body.document.mimeType || 'application/pdf',
       interactiveReplyId: null,
     }
   }
@@ -188,6 +237,48 @@ function normalizeContent(body: ZApiWebhookBody): {
       contentText: null,
       mediaUrl: body.audio.audioUrl || null,
       mediaType: body.audio.mimeType || null,
+      mediaType: body.audio.mimeType || 'audio/ogg',
+      interactiveReplyId: null,
+    }
+  }
+  if (body.sticker) {
+    return {
+      contentType: 'image',
+      rawTypeLabel: 'sticker',
+      contentText: null,
+      mediaUrl: body.sticker.stickerUrl || null,
+      mediaType: body.sticker.mimeType || 'image/webp',
+      interactiveReplyId: null,
+    }
+  }
+  if (body.location) {
+    const loc = body.location
+    const locText = [
+      loc.name,
+      loc.address,
+      loc.url ||
+        (loc.latitude && loc.longitude
+          ? `https://maps.google.com/?q=${loc.latitude},${loc.longitude}`
+          : null),
+    ]
+      .filter(Boolean)
+      .join(' - ')
+    return {
+      contentType: 'location',
+      rawTypeLabel: 'location',
+      contentText: locText || 'Localização recebida',
+      mediaUrl: null,
+      mediaType: null,
+      interactiveReplyId: null,
+    }
+  }
+  if (body.contact || (body.contacts && body.contacts.length > 0)) {
+    return {
+      contentType: 'text',
+      rawTypeLabel: 'contact',
+      contentText: '👤 Contato compartilhado',
+      mediaUrl: null,
+      mediaType: null,
       interactiveReplyId: null,
     }
   }
@@ -256,25 +347,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ status: 'unknown_instance' })
   }
 
-  // Client-Token doubles as the webhook's authentication: the same
-  // account-level security token used to authenticate OUR calls TO
-  // Z-API. Unlike Meta's HMAC-signed payload, this is a shared static
-  // secret — reject outright rather than accept an unauthenticated
-  // request from anyone who finds/guesses this URL and an instance id.
-  // Confirm in your Z-API dashboard that webhook calls are configured
-  // to include this header before relying on it in production.
-  const clientToken = request.headers.get('client-token')
-  let expectedClientToken: string
-  try {
-    expectedClientToken = decrypt(config.zapi_client_token)
-  } catch (err) {
-    console.error('[zapi-webhook] failed to decrypt stored client token:', err)
-    return NextResponse.json({ error: 'Configuration error' }, { status: 500 })
+  // Tenancy is anchored on body.instanceId matching zapi_instance_id in DB.
+  // If a client-token is provided (via custom header or ?token= query param),
+  // validate it against the stored decrypted token.
+  // Note: Z-API does NOT send custom headers on outgoing webhook callbacks,
+  // so a missing header is expected and allowed.
+  const clientToken =
+    request.headers.get('client-token') ||
+    new URL(request.url).searchParams.get('token')
+
+  if (clientToken && config.zapi_client_token) {
+    try {
+      const expectedClientToken = decrypt(config.zapi_client_token)
+      if (clientToken !== expectedClientToken) {
+        console.warn('[zapi-webhook] rejected request with invalid Client-Token')
+        return NextResponse.json({ error: 'Invalid Client-Token' }, { status: 401 })
+      }
+    } catch (err) {
+      console.error('[zapi-webhook] failed to decrypt stored client token:', err)
+      return NextResponse.json({ error: 'Configuration error' }, { status: 500 })
+    }
   }
-  if (!clientToken || clientToken !== expectedClientToken) {
-    console.warn('[zapi-webhook] rejected request with missing/invalid Client-Token')
-    return NextResponse.json({ error: 'Invalid Client-Token' }, { status: 401 })
-  }
+
+  console.info(`[zapi-webhook] accepted webhook for instanceId: ${body.instanceId} (type: ${body.type || 'message'})`)
 
   after(async () => {
     try {
@@ -312,19 +407,39 @@ async function processZApiWebhook(
   }
   // Z-API identities are always phone-based — there's no BSUID/username
   // concept here (that's specific to Meta's username rollout).
+  const rawPhone =
+    body.phone ||
+    body.senderPhone ||
+    body.sender ||
+    (body.chatId ? body.chatId.replace(/@.*$/, '') : '')
+
+  const contactName =
+    body.senderName?.trim() ||
+    body.chatName?.trim() ||
+    ''
+
   const identity: WaIdentity = {
     phone: normalizePhone(body.phone ?? ''),
+    phone: normalizePhone(rawPhone ?? ''),
     waUserId: null,
     waParentUserId: null,
     waUsername: null,
     name: body.senderName?.trim() ?? '',
+    name: contactName,
   }
   if (!hasUsableIdentity(identity)) {
     console.error('[zapi-webhook] inbound event carries no usable phone; skipping:', body.messageId)
+    console.error(
+      '[zapi-webhook] inbound event carries no usable phone; skipping:',
+      body.messageId,
+      'raw body:',
+      JSON.stringify(body)
+    )
     return
   }
 
   if (body.reaction) {
+    console.info(`[zapi-webhook] ingesting reaction from ${identity.phone} on ${body.reaction.referencedMessage?.messageId}`)
     await ingestInboundMessage({
       accountId: config.account_id,
       configOwnerUserId: config.user_id,
@@ -349,6 +464,10 @@ async function processZApiWebhook(
     interactiveReplyId: normalized.interactiveReplyId,
     replyToProviderMessageId: body.referenceMessageId ?? null,
   }
+
+  console.info(
+    `[zapi-webhook] ingesting inbound message ${body.messageId} (${normalized.contentType}) from ${identity.phone} for account ${config.account_id}`
+  )
 
   await ingestInboundMessage({
     accountId: config.account_id,

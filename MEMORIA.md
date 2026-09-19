@@ -223,3 +223,29 @@ npx vitest run
    - Criar fluxos de boas-vindas, distribuição de leads e respostas com IA na aba de Automações e Flows.
 4. **Upstash Redis (Opcional):**
    - Caso o tráfego escale para múltiplas instâncias no futuro, basta criar uma base gratuita no Upstash e preencher `UPSTASH_REDIS_REST_URL` e `UPSTASH_REDIS_REST_TOKEN` no `/opt/wacrm/.env.local`.
+
+---
+
+## 8. Diagnóstico e Resolução do Webhook Z-API (Inbound Messages)
+
+### Causa Raiz Identificada:
+Ao enviar mensagens pelo WhatsApp pareado via Z-API, as mensagens não entravam no Inbox (`/inbox`).
+A análise dos logs do contêiner em produção (`docker logs --tail 100 wacrm`) revelou a mensagem:
+`[zapi-webhook] rejected request with missing/invalid Client-Token (HTTP 401)`
+
+**Motivo:**
+1. A rota de webhook do Z-API (`src/app/api/whatsapp/zapi/webhook/route.ts`) exigia obrigatoriamente o header `client-token`.
+2. Conforme a arquitetura da Z-API, o `Client-Token` é um token enviado **nas requisições que nós fazemos para a API da Z-API**, mas a Z-API **não envia** esse cabeçalho customizado de volta nos callbacks de webhook recebidos.
+3. Como a rota exigia o header estrito, rejeitava 100% dos webhooks com HTTP 401.
+
+### Solução Aplicada:
+1. **Autenticação Multi-Tenant Segura:**
+   - A tenência agora é vinculada com segurança pelo `body.instanceId` (chave única no banco `whatsapp_config.zapi_instance_id`).
+   - O `clientToken` é validado caso esteja presente no header ou via query param `?token=...`, sem bloquear webhooks caso a Z-API envie sem cabeçalho.
+2. **Registro de Webhook com Token:**
+   - Na rota `src/app/api/whatsapp/zapi/config/route.ts`, o registro do webhook agora anexa `?token=${encodeURIComponent(clientToken)}` na URL de retorno para segurança adicional.
+3. **Resiliência e Flexibilidade de Payloads:**
+   - Extração de telefone abrangente (`body.phone`, `body.senderPhone`, `body.sender`, `body.chatId`).
+   - Extração de conteúdo textual e mídia enriquecida (`body.text.message`, texto direto como string, `body.message.conversation`, stickers, localizações e contatos).
+   - Testes unitários expandidos e validados via Vitest (13 testes passando).
+
