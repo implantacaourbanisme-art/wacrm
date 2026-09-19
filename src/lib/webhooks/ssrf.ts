@@ -12,14 +12,26 @@
 // loopback, private, link-local, ULA, or otherwise non-publicly-
 // routable. Combined with `redirect: 'manual'` at the call site (so a
 // public URL can't 3xx-bounce to an internal one), this blocks the
-// common SSRF vectors. It is NOT a defense against DNS rebinding (a
-// host that resolves public here but flips to private before connect) —
-// that needs pinning the resolved IP into the socket, which fetch
-// doesn't expose; documented as a residual risk.
+// common SSRF vectors.
+//
+// `resolveSsrfSafeDispatcher` closes the one gap `isDeliverableUrl`
+// alone can't: DNS rebinding, where a host resolves public at check
+// time and flips to a private address before the ACTUAL connection's
+// own (separate) DNS resolution. A caller that only calls
+// `isDeliverableUrl` then `fetch(url)` re-resolves DNS a second time at
+// connect — exactly the window a rebinding attacker needs. Callers
+// that connect to the URL themselves (deliver.ts, the automation
+// engine's send_webhook step) should use `resolveSsrfSafeDispatcher`
+// instead and pass its result as `fetch`'s `dispatcher` option, which
+// pins the connection to the address(es) already verified — no second
+// resolution happens. `isDeliverableUrl` stays as a plain yes/no check
+// for a caller that validates a URL without ever fetching it itself
+// (template-header-handle.ts, where Meta's own servers do the fetch).
 // ============================================================
 
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { Agent, type Dispatcher } from 'undici';
 
 /** True for loopback / private / link-local / reserved IPv4 or IPv6. */
 export function isPrivateOrReservedIp(ip: string): boolean {
@@ -47,21 +59,33 @@ export function isPrivateOrReservedIp(ip: string): boolean {
   return false;
 }
 
+interface ResolvedAddress {
+  address: string;
+  family: 4 | 6;
+}
+
 /**
- * True if `rawUrl`'s host resolves only to publicly-routable
- * address(es). Returns false for a malformed URL, an obvious internal
- * name (`localhost`, `*.local`, `*.internal`), a literal private IP, or
- * a hostname that resolves to any private/reserved address.
+ * Shared resolution behind both isDeliverableUrl and
+ * resolveSsrfSafeDispatcher: parse the host, reject an obvious internal
+ * name or literal private IP outright, otherwise resolve via DNS and
+ * reject if ANY returned address is private/reserved. Returns the
+ * verified address list (never empty) on success, or null on any
+ * rejection — a malformed URL, an internal name, a private literal, an
+ * unresolvable host, or a host with at least one private address.
  */
-export async function isDeliverableUrl(rawUrl: string): Promise<boolean> {
+async function resolvePublicAddresses(rawUrl: string): Promise<ResolvedAddress[] | null> {
   let host: string;
   try {
     host = new URL(rawUrl).hostname.replace(/^\[|\]$/g, '');
   } catch {
-    return false;
+    return null;
   }
 
-  if (isIP(host)) return !isPrivateOrReservedIp(host);
+  const ipVersion = isIP(host);
+  if (ipVersion) {
+    if (isPrivateOrReservedIp(host)) return null;
+    return [{ address: host, family: ipVersion === 6 ? 6 : 4 }];
+  }
 
   const lower = host.toLowerCase();
   if (
@@ -70,14 +94,55 @@ export async function isDeliverableUrl(rawUrl: string): Promise<boolean> {
     lower.endsWith('.local') ||
     lower.endsWith('.internal')
   ) {
-    return false;
+    return null;
   }
 
   try {
     const results = await lookup(host, { all: true });
-    if (results.length === 0) return false;
-    return results.every((r) => !isPrivateOrReservedIp(r.address));
+    if (results.length === 0) return null;
+    if (!results.every((r) => !isPrivateOrReservedIp(r.address))) return null;
+    return results.map((r) => ({ address: r.address, family: r.family as 4 | 6 }));
   } catch {
-    return false; // unresolvable → not deliverable
+    return null; // unresolvable → not deliverable
   }
+}
+
+/**
+ * True if `rawUrl`'s host resolves only to publicly-routable
+ * address(es). Returns false for a malformed URL, an obvious internal
+ * name (`localhost`, `*.local`, `*.internal`), a literal private IP, or
+ * a hostname that resolves to any private/reserved address.
+ *
+ * Only a yes/no check — a caller that goes on to `fetch(rawUrl)` itself
+ * re-resolves DNS at connect time, which is the DNS-rebinding gap
+ * described at the top of this file. Use
+ * `resolveSsrfSafeDispatcher` instead when you're the one connecting.
+ */
+export async function isDeliverableUrl(rawUrl: string): Promise<boolean> {
+  return (await resolvePublicAddresses(rawUrl)) !== null;
+}
+
+/**
+ * Verify `rawUrl` the same way `isDeliverableUrl` does, and — if it
+ * passes — return an undici `Agent` whose connections are pinned to
+ * exactly the address(es) just verified, instead of letting `fetch`
+ * resolve DNS again at connect time. Pass the result as `dispatcher` to
+ * `fetch`. TLS SNI and the `Host` header still use the real hostname —
+ * only which IP gets dialed is pinned, so certificate validation is
+ * unaffected.
+ *
+ * Returns null when the URL isn't deliverable — treat identically to a
+ * failed `isDeliverableUrl` check.
+ */
+export async function resolveSsrfSafeDispatcher(rawUrl: string): Promise<Dispatcher | null> {
+  const addresses = await resolvePublicAddresses(rawUrl);
+  if (!addresses) return null;
+
+  return new Agent({
+    connect: {
+      lookup: (_hostname, _opts, callback) => {
+        callback(null, addresses);
+      },
+    },
+  });
 }

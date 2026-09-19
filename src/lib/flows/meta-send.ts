@@ -1,14 +1,7 @@
-import {
-  sendInteractiveButtons,
-  sendInteractiveList,
-  sendMediaMessage,
-  sendTextMessage,
-  type InteractiveButton,
-  type InteractiveListSection,
-  type MediaKind,
-} from '@/lib/whatsapp/meta-api'
+import type { InteractiveButton, InteractiveListSection, MediaKind } from '@/lib/whatsapp/meta-api'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { loadWhatsAppSendProvider } from '@/lib/whatsapp/provider'
 import {
   phoneVariants,
   isRecipientNotAllowedError,
@@ -17,7 +10,7 @@ import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity'
 import { supabaseAdmin } from './admin-client'
 
 // ------------------------------------------------------------
-// Flows-side Meta sender (interactive variants).
+// Flows-side sender (interactive variants).
 //
 // Mirrors src/lib/automations/meta-send.ts (engineSendText /
 // engineSendTemplate) but emits interactive button + list messages.
@@ -26,16 +19,24 @@ import { supabaseAdmin } from './admin-client'
 // phone-variant retry + DB persistence are obvious extraction
 // candidates into a shared base.
 //
-// PR #1 ships this in isolation: callers don't exist yet. PR #2
-// brings the flow runner online and wires it up. Shipping it now
-// keeps the foundation PR self-contained and unit-testable.
+// The actual sends below go through `loadWhatsAppSendProvider`
+// (provider.ts), which resolves to either Meta or Z-API depending on
+// what the account connected — this file no longer assumes Meta.
+// `loadAccountMetaCredentials` stays Meta-specific below; it backs
+// only the AI auto-reply's typing indicator, a Meta Cloud API feature
+// with no Z-API equivalent.
 // ------------------------------------------------------------
 
 /**
  * Resolve the account's Meta sending credentials: the phone number id
- * plus the DECRYPTED access token from `whatsapp_config`. The single
- * home for that decrypt step — callers outside this file (the AI
- * auto-reply's typing indicator) reuse it rather than growing a copy.
+ * plus the DECRYPTED access token from `whatsapp_config`. Meta-only —
+ * used by the AI auto-reply's typing indicator (`sendTypingIndicator`
+ * in meta-api.ts has no Z-API equivalent), not by the send functions
+ * below (they use `loadWhatsAppSendProvider` instead, which works for
+ * either provider). Throws (with a decrypt error, since access_token
+ * is null for a zapi-provider row) when called for a Z-API account —
+ * callers must be prepared to swallow that the way the typing
+ * indicator already does.
  */
 export async function loadAccountMetaCredentials(
   db: ReturnType<typeof supabaseAdmin>,
@@ -110,18 +111,10 @@ export async function engineSendText(
   }
   const sanitized = sendTarget.target
 
-  const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
-    db,
-    args.accountId,
-  )
+  const sendProvider = await loadWhatsAppSendProvider(db, args.accountId)
 
   const attempt = async (phone: string): Promise<string> => {
-    const r = await sendTextMessage({
-      phoneNumberId,
-      accessToken,
-      to: phone,
-      text: args.text,
-    })
+    const r = await sendProvider.sendText({ to: phone, text: args.text })
     return r.messageId
   }
 
@@ -219,15 +212,10 @@ export async function engineSendMedia(
   }
   const sanitized = sendTarget.target
 
-  const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
-    db,
-    args.accountId,
-  )
+  const sendProvider = await loadWhatsAppSendProvider(db, args.accountId)
 
   const attempt = async (phone: string): Promise<string> => {
-    const r = await sendMediaMessage({
-      phoneNumberId,
-      accessToken,
+    const r = await sendProvider.sendMedia({
       to: phone,
       kind: args.kind,
       link: args.link,
@@ -370,33 +358,26 @@ async function sendInteractiveViaMeta(
   }
   const sanitized = sendTarget.target
 
-  const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
-    db,
-    input.accountId,
-  )
+  const sendProvider = await loadWhatsAppSendProvider(db, input.accountId)
 
   const attempt = async (phone: string): Promise<string> => {
     if (input.kind === 'buttons') {
-      const r = await sendInteractiveButtons({
-        phoneNumberId,
-        accessToken,
+      const r = await sendProvider.sendInteractiveButtons({
         to: phone,
-        bodyText: input.bodyText,
+        body: input.bodyText,
         buttons: input.buttons,
-        headerText: input.headerText,
-        footerText: input.footerText,
+        header: input.headerText,
+        footer: input.footerText,
       })
       return r.messageId
     }
-    const r = await sendInteractiveList({
-      phoneNumberId,
-      accessToken,
+    const r = await sendProvider.sendInteractiveList({
       to: phone,
-      bodyText: input.bodyText,
+      body: input.bodyText,
       buttonLabel: input.buttonLabel,
       sections: input.sections,
-      headerText: input.headerText,
-      footerText: input.footerText,
+      header: input.headerText,
+      footer: input.footerText,
     })
     return r.messageId
   }

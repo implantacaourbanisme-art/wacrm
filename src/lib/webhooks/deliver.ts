@@ -24,7 +24,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { buildSignatureHeader } from '@/lib/webhooks/sign';
-import { isDeliverableUrl } from '@/lib/webhooks/ssrf';
+import { resolveSsrfSafeDispatcher } from '@/lib/webhooks/ssrf';
 import type { WebhookEvent } from '@/lib/webhooks/events';
 
 /** Per-endpoint HTTP timeout. Kept short — this runs in `after()`. */
@@ -93,7 +93,12 @@ async function deliverOne(
   // SSRF guard: refuse to POST to a host that resolves to a private /
   // loopback / link-local address. Counts as a failure so a
   // misconfigured internal URL surfaces and eventually auto-disables.
-  if (!(await isDeliverableUrl(row.url))) {
+  // Returns an Agent pinned to the exact address(es) just verified —
+  // passed as `dispatcher` below — rather than a plain boolean, so the
+  // actual connection can't re-resolve DNS to something else (the
+  // rebinding gap a check-then-fetch pattern leaves open).
+  const dispatcher = await resolveSsrfSafeDispatcher(row.url);
+  if (!dispatcher) {
     console.warn('[webhooks] refusing non-public delivery target for', row.id);
     await recordFailure(db, row);
     return;
@@ -125,7 +130,10 @@ async function deliverOne(
       // misconfiguration; treat it as a failure.
       redirect: 'manual',
       signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
-    });
+      // Pin the connection to the address(es) already verified above —
+      // see resolveSsrfSafeDispatcher's doc comment.
+      dispatcher,
+    } as RequestInit & { dispatcher: typeof dispatcher });
     if (!res.ok) throw new Error(`endpoint responded ${res.status}`);
 
     // Success: clear the failure streak.

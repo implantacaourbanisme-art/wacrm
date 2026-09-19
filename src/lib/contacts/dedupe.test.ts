@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   dedupeByPhone,
@@ -68,13 +68,17 @@ describe("dedupeByPhone", () => {
 });
 
 describe("findExistingContact", () => {
-  // Minimal SupabaseClient stub: resolves the .from().select().eq().like()
-  // chain to a fixed candidate set.
-  function stubDb(rows: Array<{ id: string; phone: string }>): SupabaseClient {
+  // Minimal SupabaseClient stub: resolves the
+  // .from().select().eq().like().order() chain to a fixed candidate set.
+  function stubDb(
+    rows: Array<{ id: string; phone: string }>,
+    error: { message: string } | null = null,
+  ): SupabaseClient {
     const builder = {
       select: () => builder,
       eq: () => builder,
-      like: () => Promise.resolve({ data: rows, error: null }),
+      like: () => builder,
+      order: () => Promise.resolve({ data: error ? null : rows, error }),
     };
     return { from: () => builder } as unknown as SupabaseClient;
   }
@@ -94,5 +98,29 @@ describe("findExistingContact", () => {
   it("returns null for an empty phone without querying", async () => {
     const db = stubDb([{ id: "c1", phone: "15551234567" }]);
     expect(await findExistingContact(db, "acct", "   ")).toBeNull();
+  });
+
+  it("picks the first (oldest, per the ORDER BY) candidate deterministically", async () => {
+    // Two different contacts sharing a last-8-digit suffix — a real
+    // scenario in a multi-country account. Without ORDER BY this used
+    // to depend on whatever order Postgres happened to return.
+    const db = stubDb([
+      { id: "older", phone: "37063949836" },
+      { id: "newer", phone: "255163949836" },
+    ]);
+    const hit = await findExistingContact(db, "acct", "+370 063 949 836");
+    expect(hit?.id).toBe("older");
+  });
+
+  it("logs a query error instead of swallowing it silently, still resolving null", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const db = stubDb([], { message: "connection reset" });
+    const hit = await findExistingContact(db, "acct", "+1 555-123-4567");
+    expect(hit).toBeNull();
+    expect(spy).toHaveBeenCalledWith(
+      "[dedupe] findExistingContact query failed:",
+      "connection reset",
+    );
+    spy.mockRestore();
   });
 });

@@ -31,6 +31,27 @@ export interface ExistingContact {
  * or null. Pre-filters in SQL by the last-8-digit suffix (so we don't
  * pull every contact), then applies the strict `phonesMatch` in JS on
  * the small candidate set — the exact approach the webhook has used.
+ *
+ * Two hardenings over the original version:
+ *
+ *   - Deterministic tie-break. `phonesMatch`'s trunk-prefix tolerance
+ *     (last-8-digit match) means two genuinely different contacts can
+ *     both match the same suffix, most plausibly in a multi-country
+ *     account. Without an ORDER BY, which candidate won was whatever
+ *     order Postgres/PostgREST happened to return — not guaranteed
+ *     stable across calls, so the same inbound message could attach
+ *     to a different contact run to run. Oldest-first is the same
+ *     "canonical survivor" convention already used for conversation
+ *     dedup (inbound-pipeline.ts's findOrCreateConversation).
+ *   - A query error is logged, not swallowed. It still resolves to
+ *     null rather than throwing — every caller here treats null as
+ *     "no match, go ahead and create one," and making this throw
+ *     would need each of them updated to fail closed instead. Given
+ *     that trade-off, the pragmatic middle ground for now is: don't
+ *     hide the error (a transient failure manufacturing a duplicate
+ *     contact used to be invisible in the logs), while leaving the
+ *     fail-open behavior in place until a caller actually needs
+ *     fail-closed semantics badly enough to justify the ripple.
  */
 export async function findExistingContact(
   db: SupabaseClient,
@@ -46,9 +67,14 @@ export async function findExistingContact(
     .from("contacts")
     .select("*")
     .eq("account_id", accountId)
-    .like("phone", `%${suffix}`);
+    .like("phone", `%${suffix}`)
+    .order("created_at", { ascending: true });
 
-  if (error || !data) return null;
+  if (error) {
+    console.error("[dedupe] findExistingContact query failed:", error.message);
+    return null;
+  }
+  if (!data) return null;
 
   return (
     (data as ExistingContact[]).find((c) => phonesMatch(c.phone, phone)) ?? null

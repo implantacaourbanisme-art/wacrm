@@ -46,7 +46,19 @@ function makeDb(script: Script): SupabaseClient {
       return builder;
     },
     eq: () => builder,
-    order: () => builder,
+    // `.order()` terminates the contacts `.like().order()` chain
+    // (dedupe.ts's findExistingContact, now ordered for a deterministic
+    // tie-break) but stays chainable for conversations' `.order().limit()`.
+    order: () => {
+      if (table === 'contacts' && mode === 'select') {
+        const data = script.contactCandidatesByCall
+          ? (script.contactCandidatesByCall[likeCalls] ?? [])
+          : (script.contactCandidates ?? []);
+        likeCalls++;
+        return Promise.resolve({ data, error: null });
+      }
+      return builder;
+    },
     limit: () => {
       // Only the conversation lookup terminates on `.limit(1)`.
       if (table === 'conversations' && mode === 'select') {
@@ -58,13 +70,7 @@ function makeDb(script: Script): SupabaseClient {
       }
       return Promise.resolve({ data: [], error: null });
     },
-    like: () => {
-      const data = script.contactCandidatesByCall
-        ? (script.contactCandidatesByCall[likeCalls] ?? [])
-        : (script.contactCandidates ?? []);
-      likeCalls++;
-      return Promise.resolve({ data, error: null });
-    },
+    like: () => builder,
     maybeSingle: () => {
       if (table === 'whatsapp_config')
         return Promise.resolve({ data: script.config ?? null, error: null });

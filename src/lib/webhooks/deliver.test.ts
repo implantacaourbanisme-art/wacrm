@@ -6,13 +6,17 @@ vi.mock('@/lib/whatsapp/encryption', () => ({
   encrypt: (s: string) => s,
 }));
 
-// Control the SSRF guard per-test.
+// Control the SSRF guard per-test. A "deliverable" URL resolves to a
+// truthy stand-in for the pinned dispatcher deliverOne passes straight
+// through to fetch as the `dispatcher` option — its exact shape
+// doesn't matter here since fetch itself is mocked too.
+const FAKE_DISPATCHER = { __fakeDispatcher: true };
 vi.mock('@/lib/webhooks/ssrf', () => ({
-  isDeliverableUrl: vi.fn(async () => true),
+  resolveSsrfSafeDispatcher: vi.fn(async () => FAKE_DISPATCHER),
 }));
 
 import { dispatchWebhookEvent, MAX_CONSECUTIVE_FAILURES } from './deliver';
-import { isDeliverableUrl } from './ssrf';
+import { resolveSsrfSafeDispatcher } from './ssrf';
 
 interface Row {
   id: string;
@@ -58,7 +62,7 @@ function makeDb(rows: Row[], calls: Calls) {
 const emptyCalls = (): Calls => ({ updates: [], rpcs: [] });
 
 beforeEach(() => {
-  vi.mocked(isDeliverableUrl).mockResolvedValue(true);
+  vi.mocked(resolveSsrfSafeDispatcher).mockResolvedValue(FAKE_DISPATCHER as never);
   vi.stubGlobal('fetch', vi.fn());
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -82,6 +86,9 @@ describe('dispatchWebhookEvent', () => {
     expect(opts.redirect).toBe('manual');
     expect(opts.headers['X-Wacrm-Event']).toBe('message.received');
     expect(opts.headers['X-Wacrm-Signature']).toMatch(/^t=\d+,v1=[0-9a-f]{64}$/);
+    // The connection is pinned to the dispatcher resolveSsrfSafeDispatcher
+    // just verified, not left to fetch's own (separate) DNS resolution.
+    expect(opts.dispatcher).toBe(FAKE_DISPATCHER);
     // Payload carries a dedupe id.
     expect(JSON.parse(opts.body).id).toMatch(/[0-9a-f-]{36}/);
     expect(calls.updates[0]).toMatchObject({ id: 'a', payload: { failure_count: 0 } });
@@ -107,7 +114,7 @@ describe('dispatchWebhookEvent', () => {
   });
 
   it('blocks a non-public target (SSRF guard) without fetching', async () => {
-    vi.mocked(isDeliverableUrl).mockResolvedValue(false);
+    vi.mocked(resolveSsrfSafeDispatcher).mockResolvedValue(null);
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const calls = emptyCalls();

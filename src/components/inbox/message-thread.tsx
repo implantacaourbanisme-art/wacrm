@@ -845,14 +845,21 @@ export function MessageThread({
     async (agentId: string | null) => {
       if (!conversation) return;
 
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("conversations")
-        .update({ assigned_agent_id: agentId })
-        .eq("id", conversation.id);
-
-      if (error) {
-        console.error("Failed to update assignment:", error);
+      // Routed through the API (not a direct client-side Supabase
+      // write) so an actual assignment fires the conversation_assigned
+      // automation trigger — see lib/conversations/assign.ts.
+      try {
+        const res = await fetch(`/api/conversations/${conversation.id}/assign`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ agent_id: agentId }),
+        });
+        if (!res.ok) {
+          const payload = await res.json().catch(() => ({}));
+          throw new Error(payload?.error || `HTTP ${res.status}`);
+        }
+      } catch (err) {
+        console.error("Failed to update assignment:", err);
         toast.error(t("assignmentUpdateFailed"));
         return;
       }

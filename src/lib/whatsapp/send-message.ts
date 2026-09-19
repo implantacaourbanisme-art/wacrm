@@ -6,7 +6,9 @@
 // Given a conversation and message params, this:
 //   1. validates the params for the message type,
 //   2. loads the conversation + contact + WhatsApp config,
-//   3. sends to Meta (with phone-variant retry + contact auto-fix),
+//   3. sends via whichever provider the account connected — Meta Cloud
+//      API or Z-API (see provider.ts) — with phone-variant retry +
+//      contact auto-fix,
 //   4. persists the message + updates the conversation,
 //   5. pauses any active Flow run for the contact (agent stepped in).
 //
@@ -14,21 +16,13 @@
 // `accountId` and throws `SendMessageError` on failure. The callers
 // own auth, rate-limiting, body parsing, and mapping the error to
 // their respective response shapes (internal `{ error }` vs the v1
-// envelope). Behaviour is identical to the original inline route —
-// this is a straight extraction so the public endpoint can reuse it
-// without duplicating ~250 lines of Meta plumbing.
+// envelope). Behaviour for Meta accounts is unchanged from the
+// original inline route this was extracted from.
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import {
-  sendTextMessage,
-  sendTemplateMessage,
-  sendMediaMessage,
-  sendInteractiveButtons,
-  sendInteractiveList,
-  type MediaKind,
-} from '@/lib/whatsapp/meta-api';
+import { resolveSendProvider, type MediaKind } from '@/lib/whatsapp/provider';
 import {
   validateInteractivePayload,
   interactivePayloadPreviewText,
@@ -269,13 +263,15 @@ export async function sendMessageToConversation(
     );
   }
 
-  const accessToken = decrypt(config.access_token);
-
   // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
-  if (isLegacyFormat(config.access_token)) {
+  // Meta-only: migration 043 relaxed access_token to nullable for
+  // zapi-provider rows, which never had a legacy CBC value in the
+  // first place (their columns didn't exist before GCM was the only
+  // format encrypt() produces).
+  if (config.provider !== 'zapi' && config.access_token && isLegacyFormat(config.access_token)) {
     void db
       .from('whatsapp_config')
-      .update({ access_token: encrypt(accessToken) })
+      .update({ access_token: encrypt(decrypt(config.access_token)) })
       .eq('id', config.id)
       .then(({ error }: { error: { message: string } | null }) => {
         if (error) {
@@ -285,6 +281,14 @@ export async function sendMessageToConversation(
           );
         }
       });
+  }
+
+  let sendProvider;
+  try {
+    sendProvider = resolveSendProvider(config);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown provider error';
+    throw new SendMessageError('whatsapp_not_configured', message, 400);
   }
 
   // Resolve the reply target to its Meta message_id. The parent must
@@ -339,25 +343,36 @@ export async function sendMessageToConversation(
     sendLanguage = resolved.language;
   }
 
+  // Rendered body for a template send — computed once and reused both
+  // for the outbound send (Z-API has no template system, so its
+  // "template" send is this text sent plain — see provider.ts) and for
+  // the `messages.content_text` we persist below, so the two can never
+  // disagree.
+  const templateRenderedText =
+    messageType === 'template'
+      ? templateContentText(
+          templateRow,
+          templateBodyParams(templateParams, templateMessageParams),
+          contentText
+        )
+      : null;
+
   const attempt = async (phone: string): Promise<string> => {
     if (messageType === 'template') {
-      const result = await sendTemplateMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+      const result = await sendProvider.sendTemplate({
         to: phone,
         templateName: templateName!,
         language: sendLanguage,
         template: templateRow ?? undefined,
         messageParams: templateMessageParams ?? undefined,
         params: templateParams || [],
+        renderedText: templateRenderedText,
         contextMessageId,
       });
       return result.messageId;
     }
     if (isMediaKind) {
-      const result = await sendMediaMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+      const result = await sendProvider.sendMedia({
         to: phone,
         kind: messageType as MediaKind,
         link: mediaUrl!,
@@ -370,34 +385,28 @@ export async function sendMessageToConversation(
     if (messageType === 'interactive') {
       const p = interactivePayload!;
       if (p.kind === 'buttons') {
-        const result = await sendInteractiveButtons({
-          phoneNumberId: config.phone_number_id,
-          accessToken,
+        const result = await sendProvider.sendInteractiveButtons({
           to: phone,
-          bodyText: p.body,
-          headerText: p.header || undefined,
-          footerText: p.footer || undefined,
+          body: p.body,
+          header: p.header || undefined,
+          footer: p.footer || undefined,
           buttons: p.buttons,
           contextMessageId,
         });
         return result.messageId;
       }
-      const result = await sendInteractiveList({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+      const result = await sendProvider.sendInteractiveList({
         to: phone,
-        bodyText: p.body,
+        body: p.body,
         buttonLabel: p.button_label,
-        headerText: p.header || undefined,
-        footerText: p.footer || undefined,
+        header: p.header || undefined,
+        footer: p.footer || undefined,
         sections: p.sections,
         contextMessageId,
       });
       return result.messageId;
     }
-    const result = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
+    const result = await sendProvider.sendText({
       to: phone,
       text: contentText!,
       contextMessageId,
@@ -466,11 +475,7 @@ export async function sendMessageToConversation(
     messageType === 'interactive'
       ? interactivePayload!.body
       : messageType === 'template'
-        ? templateContentText(
-            templateRow,
-            templateBodyParams(templateParams, templateMessageParams),
-            contentText
-          )
+        ? templateRenderedText
         : (contentText ?? null);
 
   const { data: messageRecord, error: msgError } = await db

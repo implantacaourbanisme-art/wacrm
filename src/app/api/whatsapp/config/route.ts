@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { supabaseAdmin } from '@/lib/supabase/admin'
 import {
   getSubscribedApps,
   listWabaPhoneNumbers,
@@ -45,21 +45,10 @@ async function resolveAccountId(
   return data.account_id as string
 }
 
-// Lazy-initialised service-role client. We need it to detect a
-// phone_number_id already claimed by a *different* user — under RLS,
-// the user's own session can't see other users' rows, so the conflict
-// would be invisible without the service role.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _adminClient: any = null
-function supabaseAdmin() {
-  if (!_adminClient) {
-    _adminClient = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-  }
-  return _adminClient
-}
+// supabaseAdmin (imported above) is needed to detect a phone_number_id
+// already claimed by a *different* user — under RLS, the user's own
+// session can't see other users' rows, so the conflict would be
+// invisible without the service role.
 
 /**
  * Shape every failed Meta call into `{ error, meta }` — the actionable
@@ -494,6 +483,11 @@ export async function POST(request: Request) {
     // store the credentials and the error so the UI can guide the
     // user through a retry.
     const baseRow = {
+      // Explicit — an account that previously connected via Z-API and
+      // is now (re)saving Meta credentials must actually flip back,
+      // not just leave the column at whatever it was (migration 043
+      // added this column; UPDATE never applies a column default).
+      provider: 'meta',
       phone_number_id,
       waba_id: waba_id || null,
       access_token: encryptedAccessToken,
@@ -503,6 +497,13 @@ export async function POST(request: Request) {
       registered_at: registrationError ? null : registeredAt,
       subscribed_apps_at: subscribedAppsAt ?? null,
       last_registration_error: registrationError,
+      // Clear any stale Z-API credentials left over from a previous
+      // connection on this account — hygiene, not required by the DB
+      // CHECK constraint (which only looks at `provider`).
+      zapi_instance_id: null,
+      zapi_instance_token: null,
+      zapi_client_token: null,
+      zapi_connected_at: null,
       updated_at: new Date().toISOString(),
     }
 

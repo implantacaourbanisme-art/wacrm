@@ -9,6 +9,28 @@ import { embedTexts, toVectorLiteral } from './embeddings'
 // lexical full-text search).
 // ============================================================
 
+/**
+ * Per-document content cap. Ingest chunks and (optionally) embeds
+ * synchronously inside the request that saves the document — with no
+ * cap, a very large paste chunks into potentially thousands of rows
+ * and embeds in batches inline, which can run long enough to threaten
+ * the route's execution-time budget. ~120k characters is generous for
+ * the FAQ/policy/product-doc use case this feature targets (a single
+ * chunk is 1200 chars, so this is still a 100-chunk document) while
+ * bounding the worst case. Enforced in the POST and PATCH routes.
+ */
+export const MAX_KNOWLEDGE_DOCUMENT_CHARS = 120_000
+
+/**
+ * Per-account document count cap. Bounds total ingest/retrieval cost
+ * as an account's knowledge base grows — retrieval issues one COUNT,
+ * one embedding call, and up to two RPCs per draft/auto-reply
+ * regardless of KB size, but the underlying index and query cost
+ * still scale with total chunks. Enforced in the POST route only
+ * (PATCH/DELETE don't change the count).
+ */
+export const MAX_KNOWLEDGE_DOCUMENTS_PER_ACCOUNT = 500
+
 interface MatchRow {
   id: string
   content: string

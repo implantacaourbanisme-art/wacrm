@@ -16,6 +16,9 @@ const h = vi.hoisted(() => ({
     claim: true as boolean,
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
+    /** Count the ai_usage_log monthly-cap query resolves to. Default 0
+     *  so the existing eligibility-gate tests are unaffected. */
+    monthlyReplyCount: 0 as number,
   },
 }))
 
@@ -41,6 +44,16 @@ vi.mock('./admin-client', () => ({
           in: () => chain,
           limit: () =>
             Promise.resolve({ data: h.state.autoResponders, error: null }),
+        }
+        return chain
+      }
+      if (table === 'ai_usage_log') {
+        // .select(..., {count}).eq().eq().gte() → monthly auto-reply count
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          gte: () =>
+            Promise.resolve({ count: h.state.monthlyReplyCount, error: null }),
         }
         return chain
       }
@@ -200,6 +213,21 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
     expect(h.sendTypingIndicator).not.toHaveBeenCalled()
+  })
+
+  it('skips when the account has hit its monthly auto-reply cap', async () => {
+    // Default cap is 2000 (defaults.ts); well past it here regardless
+    // of env overrides in the test environment.
+    h.state.monthlyReplyCount = 999_999
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('still sends when under the monthly cap', async () => {
+    h.state.monthlyReplyCount = 1
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalled()
   })
 })
 

@@ -42,6 +42,27 @@ export function aiContextMessageLimit(): number {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_CONTEXT_MESSAGE_LIMIT
 }
 
+const DEFAULT_AUTOREPLY_MAX_PER_ACCOUNT_PER_MONTH = 2000
+
+/**
+ * Durable, account-wide ceiling on how many auto-replies go out in a
+ * calendar month, checked against `ai_usage_log` (unlike the in-memory
+ * per-minute `RATE_LIMITS.aiAutoReplyAccount`, this survives a process
+ * restart and isn't defeated by horizontal scale-out). The per-minute
+ * limit alone doesn't cap spend — a steady stream of inbound all month,
+ * comfortably under the per-minute ceiling every time, still adds up to
+ * real cost on the account's own BYO key. This is the backstop for
+ * that. Override with `AI_AUTOREPLY_MAX_PER_ACCOUNT_PER_MONTH`; 2000 is
+ * generous for a small-to-mid-size support inbox (~65/day) while still
+ * bounding a genuinely runaway account.
+ */
+export function maxAutoRepliesPerAccountPerMonth(): number {
+  const raw = Number(process.env.AI_AUTOREPLY_MAX_PER_ACCOUNT_PER_MONTH)
+  return Number.isFinite(raw) && raw > 0
+    ? Math.floor(raw)
+    : DEFAULT_AUTOREPLY_MAX_PER_ACCOUNT_PER_MONTH
+}
+
 /**
  * Build the system prompt shared by draft + auto-reply. The account's
  * own `system_prompt` (business context / persona / tone) is appended

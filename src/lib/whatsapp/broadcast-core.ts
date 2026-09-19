@@ -7,9 +7,10 @@
 //   createBroadcast()  — validate, resolve contacts, insert the
 //                        `broadcasts` row + `broadcast_recipients`
 //                        rows (status 'pending'), return a plan.
-//   deliverBroadcast() — send each recipient's template via Meta
-//                        (phone-variant retry), stamp each recipient
-//                        row + the aggregate counts, finalize status.
+//   deliverBroadcast() — send each recipient's template via whichever
+//                        provider the account connected (phone-variant
+//                        retry), stamp each recipient row + the
+//                        aggregate counts, finalize status.
 //
 // Recipient rows carry `whatsapp_message_id`, so the inbound webhook's
 // status handler (which matches on that column) updates delivered/read
@@ -18,15 +19,14 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { sendTemplateMessage } from '@/lib/whatsapp/meta-api';
-import { decrypt } from '@/lib/whatsapp/encryption';
+import { resolveSendProvider, type WhatsAppSendProvider } from '@/lib/whatsapp/provider';
 import {
   sanitizePhoneForMeta,
   isValidE164,
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
-import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
+import { resolveTemplateRow, templateContentText } from '@/lib/whatsapp/template-body';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
 
@@ -66,8 +66,9 @@ export interface BroadcastPlan {
   broadcastId: string;
   templateName: string;
   templateLanguage: string;
-  phoneNumberId: string;
-  accessToken: string;
+  /** Resolved once (Meta or Z-API, per the account's whatsapp_config.provider)
+   *  and reused for every recipient — see provider.ts. */
+  sendProvider: WhatsAppSendProvider;
   templateRow: MessageTemplate | null;
   planned: PlannedRecipient[];
   /** Phones rejected up front (invalid E.164) — counted as failed. */
@@ -109,7 +110,7 @@ export async function createBroadcast(
   }
 
   // Config (fail fast + provides the audit trail owner already resolved
-  // by the caller). Meta send needs phone_number_id + decrypted token.
+  // by the caller).
   const { data: config, error: configError } = await db
     .from('whatsapp_config')
     .select('*')
@@ -122,7 +123,13 @@ export async function createBroadcast(
       400
     );
   }
-  const accessToken = decrypt(config.access_token);
+  let sendProvider: WhatsAppSendProvider;
+  try {
+    sendProvider = resolveSendProvider(config);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'WhatsApp connection is misconfigured';
+    throw new BroadcastError('whatsapp_not_configured', message, 400);
+  }
 
   // Template row (once) for header/button components; guard a
   // malformed local row rather than N identical opaque failures.
@@ -234,8 +241,7 @@ export async function createBroadcast(
     broadcastId,
     templateName,
     templateLanguage: resolvedTemplate.language,
-    phoneNumberId: config.phone_number_id,
-    accessToken,
+    sendProvider,
     templateRow,
     planned,
     rejected,
@@ -266,14 +272,15 @@ export async function deliverBroadcast(
 
     for (const variant of variants) {
       try {
-        const result = await sendTemplateMessage({
-          phoneNumberId: plan.phoneNumberId,
-          accessToken: plan.accessToken,
+        const result = await plan.sendProvider.sendTemplate({
           to: variant,
           templateName: plan.templateName,
           language: plan.templateLanguage,
           template: plan.templateRow ?? undefined,
           params: recipient.params,
+          // Z-API has no template system — this is what it actually
+          // sends (see provider.ts). Meta ignores it.
+          renderedText: templateContentText(plan.templateRow, recipient.params),
         });
         sentMessageId = result.messageId;
         lastError = null;

@@ -1,10 +1,9 @@
-import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
 } from '@/lib/flows/meta-send'
-import { decrypt } from '@/lib/whatsapp/encryption'
+import { resolveSendProvider } from '@/lib/whatsapp/provider'
 import {
   phoneVariants,
   isRecipientNotAllowedError,
@@ -17,7 +16,7 @@ import {
 import { supabaseAdmin } from './admin-client'
 
 // ------------------------------------------------------------
-// Automation-side Meta sender.
+// Automation-side sender.
 //
 // Mirrors the logic in src/app/api/whatsapp/send/route.ts but uses
 // the service-role client (engine has no cookies) and accepts the
@@ -25,6 +24,10 @@ import { supabaseAdmin } from './admin-client'
 // on hand. Kept here (rather than refactoring the user-facing send
 // route) to avoid risk to the working manual-send path — they can
 // converge in a later refactor.
+//
+// Sends go through `resolveSendProvider` (provider.ts), which picks
+// Meta or Z-API per the account's `whatsapp_config.provider` — this
+// file no longer assumes Meta despite the filename.
 // ------------------------------------------------------------
 
 interface SendTextArgs {
@@ -148,12 +151,13 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     throw new Error('WhatsApp not configured for this account')
   }
 
-  const accessToken = decrypt(config.access_token)
+  const sendProvider = resolveSendProvider(config)
 
   // Local template row — read for the body we persist below, not for
-  // the Meta payload (the wire shape is deliberately unchanged here).
-  // A missing row is fine: the send still goes out, we just can't
-  // reconstruct the text the customer saw.
+  // the Meta payload (the wire shape is deliberately unchanged for
+  // Meta accounts here). A missing row is fine for Meta: the send
+  // still goes out, we just can't reconstruct the text the customer
+  // saw. For a Z-API account it's required — see renderedText below.
   const templateRow =
     input.kind === 'template'
       ? (
@@ -166,24 +170,27 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
         ).row
       : null
 
+  // Rendered body for a template send — Z-API has no template system,
+  // so its send is this text sent plain (see provider.ts). Meta's
+  // adapter ignores it and builds its own components from `params`,
+  // matching the wire shape this call site has always sent.
+  const templateRenderedText =
+    input.kind === 'template'
+      ? templateContentText(templateRow, input.params ?? [])
+      : null
+
   const attempt = async (phone: string): Promise<string> => {
     if (input.kind === 'template') {
-      const r = await sendTemplateMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+      const r = await sendProvider.sendTemplate({
         to: phone,
         templateName: input.templateName,
-        language: input.language,
+        language: input.language || 'en_US',
         params: input.params,
+        renderedText: templateRenderedText,
       })
       return r.messageId
     }
-    const r = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
-      to: phone,
-      text: input.text,
-    })
+    const r = await sendProvider.sendText({ to: phone, text: input.text })
     return r.messageId
   }
 
@@ -219,10 +226,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   // Templates persist the substituted body, same as the manual and
   // public-API send paths. This was unconditionally null, so every
   // automation template send rendered as an empty bubble (issue #483).
-  const content_text =
-    input.kind === 'text'
-      ? input.text
-      : templateContentText(templateRow, input.params ?? [])
+  const content_text = input.kind === 'text' ? input.text : templateRenderedText
   const template_name = input.kind === 'template' ? input.templateName : null
 
   const { error: msgErr } = await db.from('messages').insert({

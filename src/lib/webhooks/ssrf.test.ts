@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isPrivateOrReservedIp, isDeliverableUrl } from './ssrf';
+import { isPrivateOrReservedIp, isDeliverableUrl, resolveSsrfSafeDispatcher } from './ssrf';
 
 describe('isPrivateOrReservedIp', () => {
   it('flags loopback / private / link-local / CGNAT IPv4', () => {
@@ -46,5 +46,22 @@ describe('isDeliverableUrl', () => {
 
   it('allows a literal public IP', async () => {
     expect(await isDeliverableUrl('https://8.8.8.8/hook')).toBe(true);
+  });
+});
+
+describe('resolveSsrfSafeDispatcher', () => {
+  it('returns null for the same rejections isDeliverableUrl applies', async () => {
+    expect(await resolveSsrfSafeDispatcher('https://127.0.0.1/hook')).toBeNull();
+    expect(await resolveSsrfSafeDispatcher('https://169.254.169.254/latest/meta-data')).toBeNull();
+    expect(await resolveSsrfSafeDispatcher('https://localhost/hook')).toBeNull();
+    expect(await resolveSsrfSafeDispatcher('https://foo.internal/hook')).toBeNull();
+    expect(await resolveSsrfSafeDispatcher('not a url')).toBeNull();
+  });
+
+  it('returns a closeable dispatcher pinned to a public literal IP, not a boolean', async () => {
+    const dispatcher = await resolveSsrfSafeDispatcher('https://8.8.8.8/hook');
+    expect(dispatcher).not.toBeNull();
+    expect(typeof dispatcher?.close).toBe('function');
+    await dispatcher?.close();
   });
 });

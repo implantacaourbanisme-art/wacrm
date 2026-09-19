@@ -42,6 +42,7 @@ import {
 import { decideFallback, resolveFallbackPolicy } from "./fallback";
 import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
 import { removeContactTag } from "@/lib/contacts/tag-write";
+import { dispatchConversationAssignedTrigger } from "@/lib/conversations/assign";
 import {
   type CollectInputNodeConfig,
   type ConditionNodeConfig,
@@ -492,6 +493,19 @@ async function executeHandoff(
       .from("conversations")
       .update(convUpdate)
       .eq("id", run.conversation_id);
+    // Fires conversation_assigned — see lib/conversations/assign.ts.
+    // Kept as a separate call rather than routing through
+    // assignConversation() because this update also sets `status` in
+    // the same statement; only the trigger-dispatch half is reusable
+    // here.
+    if (cfg.assign_to) {
+      await dispatchConversationAssignedTrigger({
+        accountId: run.account_id,
+        conversationId: run.conversation_id,
+        contactId: run.contact_id,
+        agentId: cfg.assign_to,
+      });
+    }
   }
   await logEvent(db, run.id, "handoff", node.node_key, {
     note: cfg.note ?? null,

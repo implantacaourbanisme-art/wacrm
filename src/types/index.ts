@@ -294,10 +294,32 @@ export interface MessageReaction {
 export interface WhatsAppConfig {
   id: string;
   user_id: string;
+  /**
+   * Which provider this row's credentials belong to. Defaults to
+   * 'meta' at the DB level (migration 043) — every row created before
+   * Z-API support existed. The Meta-only fields below stay required in
+   * this type (unlike the nullable DB columns) because every existing
+   * caller reads them unconditionally when `provider !== 'zapi'`; a
+   * zapi row narrows through the zapi_* fields instead.
+   */
+  provider?: 'meta' | 'zapi';
   phone_number_id: string;
   waba_id?: string;
   access_token: string;
   verify_token?: string;
+  /** Z-API instance id — the routable unit Z-API uses in place of a
+   *  phone_number_id. Only set when provider === 'zapi'. */
+  zapi_instance_id?: string;
+  /** Z-API instance token, encrypted at rest. Only set when
+   *  provider === 'zapi'. Never sent to the client unmasked. */
+  zapi_instance_token?: string;
+  /** Z-API's account-level "Client-Token" security token, encrypted
+   *  at rest. Sent on every Z-API call and used to validate inbound
+   *  webhooks. Only set when provider === 'zapi'. */
+  zapi_client_token?: string;
+  /** Set once the QR code has been scanned and Z-API reports the
+   *  instance connected. Mirrors `registered_at`'s role for Meta. */
+  zapi_connected_at?: string;
   status: 'connected' | 'disconnected';
   connected_at?: string;
   /**
