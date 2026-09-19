@@ -1,8 +1,10 @@
 import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
-import { resumePendingExecution } from '@/lib/automations/engine'
+import { resumePendingExecution, runAutomationsForTrigger } from '@/lib/automations/engine'
 import type { AutomationContext } from '@/lib/automations/engine'
+import { cronMatchedInWindow } from '@/lib/automations/cron-matches'
+import type { TimeBasedTriggerConfig } from '@/types'
 
 /**
  * Drain due `automation_pending_executions` rows. Meant to be hit
@@ -31,6 +33,41 @@ export async function GET(request: Request) {
   }
 
   const admin = supabaseAdmin()
+
+  // ── time_based automations ──────────────────────────────────────────────
+  // Sweep all active time_based automations for this invocation window.
+  // The endpoint is called once per minute (or more); 65 s gives a margin
+  // for slight invocation drift without risk of double-firing a 1-min cron.
+  //
+  // time_based fires without a contactId — steps that require a contact
+  // (send_message, send_template, …) will surface a clear error in the log
+  // rather than silently not running. Callers that need per-contact blasts
+  // should use the Broadcasts module instead.
+  {
+    const now = new Date()
+    const { data: timeAutomations } = await admin
+      .from('automations')
+      .select('id, account_id, trigger_config')
+      .eq('trigger_type', 'time_based')
+      .eq('is_active', true)
+
+    for (const auto of timeAutomations ?? []) {
+      const cfg = auto.trigger_config as TimeBasedTriggerConfig | null
+      if (!cfg?.schedule) continue
+      if (!cronMatchedInWindow(cfg.schedule, 65_000, now)) continue
+      // Fire-and-forget, matching how webhook-triggered automations are
+      // dispatched. Failures are caught and logged inside the engine.
+      await runAutomationsForTrigger({
+        accountId: auto.account_id as string,
+        triggerType: 'time_based',
+        contactId: null,
+      }).catch((err) =>
+        console.error('[automations/cron] time_based dispatch failed:', auto.id, err),
+      )
+    }
+  }
+
+  // ── pending wait-step executions ────────────────────────────────────────
   const { data: due, error } = await admin
     .from('automation_pending_executions')
     .select('*')
@@ -41,6 +78,7 @@ export async function GET(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!due || due.length === 0) return NextResponse.json({ processed: 0 })
+
 
   let processed = 0
   for (const row of due) {

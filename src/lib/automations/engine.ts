@@ -21,9 +21,13 @@ import type {
 import { supabaseAdmin } from './admin-client'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
+import {
+  MAX_CONVERSATION_ASSIGN_CHAIN_DEPTH,
+  getConversationAssignChainDepth,
+} from '@/lib/conversations/assign-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
-import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { resolveSsrfSafeDispatcher } from '@/lib/webhooks/ssrf'
 
 // ------------------------------------------------------------
 // Public API
@@ -152,7 +156,7 @@ export async function resumePendingExecution(pending: {
   }
 
   try {
-    await executeStepsFrom({
+    const result = await executeStepsFrom({
       automation: automation as Automation,
       contactId: pending.contact_id,
       context: pending.context ?? {},
@@ -163,9 +167,41 @@ export async function resumePendingExecution(pending: {
       triggerEvent: 'resumed_wait',
     })
     await markPending(pending.id, 'done')
+
+    // The resumed scope only self-finalizes automation_logs.status when
+    // it's the outermost one (parentStepId === null inside
+    // executeStepsFrom) — a wait nested inside a condition branch
+    // resumes at a NON-null parentStepId, so nothing would otherwise
+    // ever write the log's terminal status once this branch actually
+    // finishes. Settle it here instead, but only if nothing else for
+    // this log is still outstanding (this resume may itself have hit
+    // another wait, in which case `result.status` is already
+    // 'partial' and a fresh pending row already exists — leave it be).
+    if (pending.log_id && !(await hasOutstandingWait(pending.log_id))) {
+      if (result.status === 'failed') {
+        await finalizeLog(pending.log_id, 'failed', result.errorMessage)
+      } else {
+        // A sibling branch may have already failed the log while this
+        // one was still waiting — 'failed' is terminal and must not be
+        // resurrected by a different branch resolving successfully
+        // afterward.
+        const { data: current } = await db
+          .from('automation_logs')
+          .select('status')
+          .eq('id', pending.log_id)
+          .maybeSingle()
+        if (current?.status !== 'failed') {
+          await finalizeLog(pending.log_id, 'success', result.errorMessage)
+        }
+      }
+    }
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
     console.error('[automations] resume failed:', err)
     await markPending(pending.id, 'failed')
+    if (pending.log_id) {
+      await finalizeLog(pending.log_id, 'failed', message)
+    }
   }
 }
 
@@ -241,7 +277,35 @@ interface ExecuteArgs {
   triggerEvent: string
 }
 
-async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
+interface ExecuteStepsResult {
+  /** This scope's own local outcome — does NOT reflect whether a
+   *  sibling branch elsewhere in the tree is still parked at a wait;
+   *  callers that need the run's aggregate state check
+   *  hasOutstandingWait() separately (see the two finalize points
+   *  below and resumePendingExecution). */
+  status: 'success' | 'partial' | 'failed'
+  errorMessage: string | null
+}
+
+/**
+ * True when another automation_pending_executions row for this log is
+ * still parked at a wait, elsewhere in the step tree, awaiting a cron
+ * resume. A scope that has otherwise finished its own pass must check
+ * this before claiming the run is 'success' — otherwise a condition
+ * branch's wait gets silently overwritten the moment the OTHER
+ * branches finish, before the waited-for step has actually run.
+ */
+async function hasOutstandingWait(logId: string | null): Promise<boolean> {
+  if (!logId) return false
+  const { count } = await supabaseAdmin()
+    .from('automation_pending_executions')
+    .select('id', { count: 'exact', head: true })
+    .eq('log_id', logId)
+    .eq('status', 'pending')
+  return (count ?? 0) > 0
+}
+
+async function executeStepsFrom(args: ExecuteArgs): Promise<ExecuteStepsResult> {
   const db = supabaseAdmin()
 
   const baseQuery = db
@@ -260,13 +324,18 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
 
   if (stepsErr) {
     await finalizeLog(args.logId, 'failed', stepsErr.message)
-    return
+    return { status: 'failed', errorMessage: stepsErr.message }
   }
   if (!steps || steps.length === 0) {
     if (args.parentStepId === null && args.logId) {
-      await finalizeLog(args.logId, 'success', null)
+      // Nothing left to run at the top level, but a branch elsewhere
+      // in the tree may still be waiting — same check as the
+      // loop-completion path below.
+      const finalStatus = (await hasOutstandingWait(args.logId)) ? 'partial' : 'success'
+      await finalizeLog(args.logId, finalStatus, null)
+      return { status: finalStatus, errorMessage: null }
     }
-    return
+    return { status: 'success', errorMessage: null }
   }
 
   const results: AutomationLogStepResult[] = []
@@ -301,7 +370,7 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
       })
       status = 'partial'
       await appendResults(args.logId, results, status, errorMessage)
-      return
+      return { status, errorMessage }
     }
 
     try {
@@ -348,10 +417,25 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
   }
 
   if (args.parentStepId === null) {
-    await appendResults(args.logId, results, status, errorMessage)
+    // A step recursed into a condition branch that itself hit a wait —
+    // don't claim 'success' while that branch is still parked. This
+    // used to unconditionally overwrite the branch's 'partial' write
+    // with this scope's own 'success' the instant the top-level loop
+    // finished, before the waited-for step had actually run.
+    const finalStatus =
+      status === 'failed'
+        ? 'failed'
+        : (await hasOutstandingWait(args.logId))
+          ? 'partial'
+          : status
+    await appendResults(args.logId, results, finalStatus, errorMessage)
+    return { status: finalStatus, errorMessage }
   } else {
-    // Nested branch — just append results; parent scope decides final status.
+    // Nested branch — just append results; the caller (the outer loop
+    // above, or resumePendingExecution when this scope IS the resumed
+    // one) decides the run's final status.
     await appendResults(args.logId, results, null, errorMessage)
+    return { status, errorMessage }
   }
 }
 
@@ -496,11 +580,48 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         agentId = profiles?.[0]?.user_id
       }
       if (!agentId) return 'no agent resolved'
-      await db
+      const { data: assignedConv } = await db
         .from('conversations')
         .update({ assigned_agent_id: agentId })
         .eq('account_id', args.automation.account_id)
         .eq('contact_id', args.contactId)
+        .select('id')
+        .maybeSingle()
+      if (assignedConv?.id) {
+        // Fires conversation_assigned — see lib/conversations/assign.ts
+        // for why every assignment site does this, and assign-chain.ts
+        // for the depth cap (this automation's own assign_conversation
+        // step firing the same trigger another automation answers with
+        // ITS OWN assign_conversation step is exactly the chain that
+        // needs bounding). Calls runAutomationsForTrigger directly
+        // (defined in this same file) rather than importing the shared
+        // dispatchConversationAssignedTrigger helper other call sites
+        // use, to avoid that helper's own import of this file creating
+        // a module cycle.
+        const depth = getConversationAssignChainDepth(args.context)
+        if (depth >= MAX_CONVERSATION_ASSIGN_CHAIN_DEPTH) {
+          console.warn('[automations] conversation_assigned chain depth limit reached', {
+            automationId: args.automation.id,
+            contactId: args.contactId,
+            depth,
+          })
+          return `assigned to ${agentId}; conversation_assigned dispatch skipped at depth ${depth}`
+        }
+        await runAutomationsForTrigger({
+          accountId: args.automation.account_id,
+          triggerType: 'conversation_assigned',
+          contactId: args.contactId,
+          context: {
+            ...args.context,
+            conversation_id: assignedConv.id,
+            agent_id: agentId,
+            vars: {
+              ...(args.context.vars ?? {}),
+              _conversation_assign_chain_depth: depth + 1,
+            },
+          },
+        }).catch((err) => console.error('[automations] conversation_assigned dispatch failed:', err))
+      }
       return `assigned to ${agentId}`
     }
 
@@ -591,7 +712,11 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       // server makes the request, so refuse any destination that resolves
       // to a private / loopback / link-local / reserved address. Mirrors
       // the webhook_endpoints delivery path (see lib/webhooks/deliver.ts).
-      if (!(await isDeliverableUrl(cfg.url))) {
+      // Pins the connection to the address(es) just verified — see
+      // resolveSsrfSafeDispatcher's doc comment for why a plain
+      // check-then-fetch leaves a DNS-rebinding gap open.
+      const dispatcher = await resolveSsrfSafeDispatcher(cfg.url)
+      if (!dispatcher) {
         throw new Error('send_webhook: destination not allowed')
       }
       const body = cfg.body_template ? interpolate(cfg.body_template, args) : JSON.stringify(args.context)
@@ -604,7 +729,8 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         // so a hung/slow internal host can't tie up the runner.
         redirect: 'manual',
         signal: AbortSignal.timeout(10_000),
-      })
+        dispatcher,
+      } as RequestInit & { dispatcher: typeof dispatcher })
       if (!res.ok) throw new Error(`webhook returned ${res.status}`)
       return `webhook ${res.status}`
     }
