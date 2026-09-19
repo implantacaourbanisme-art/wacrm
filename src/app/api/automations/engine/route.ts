@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
   // Per-user rate limit — this route sends outbound WhatsApp same as
   // /api/whatsapp/send, and had no budget of its own before this.
-  const limit = checkRateLimit(`automationsEngine:${userId}`, RATE_LIMITS.automationsEngine)
+  const limit = await checkRateLimit(`automationsEngine:${userId}`, RATE_LIMITS.automationsEngine)
   if (!limit.success) {
     return rateLimitResponse(limit)
   }

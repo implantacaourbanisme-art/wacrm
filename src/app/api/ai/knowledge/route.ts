@@ -6,7 +6,11 @@ import {
 } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadEmbeddingsKey } from '@/lib/ai/config'
-import { ingestDocument } from '@/lib/ai/knowledge'
+import {
+  ingestDocument,
+  MAX_KNOWLEDGE_DOCUMENT_CHARS,
+  MAX_KNOWLEDGE_DOCUMENTS_PER_ACCOUNT,
+} from '@/lib/ai/knowledge'
 import { AiError } from '@/lib/ai/types'
 
 /**
@@ -44,7 +48,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const { supabase, accountId, userId } = await requireRole('admin')
-    const limit = checkRateLimit(`ai-kb:${userId}`, RATE_LIMITS.adminAction)
+    const limit = await checkRateLimit(`ai-kb:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
 
     const body = await request.json().catch(() => null)
@@ -53,6 +57,34 @@ export async function POST(request: Request) {
     if (!title || !content) {
       return NextResponse.json(
         { error: 'title and content are required' },
+        { status: 400 },
+      )
+    }
+    if (content.length > MAX_KNOWLEDGE_DOCUMENT_CHARS) {
+      return NextResponse.json(
+        {
+          error: `content exceeds the ${MAX_KNOWLEDGE_DOCUMENT_CHARS.toLocaleString('en-US')}-character limit per document. Split it into smaller documents.`,
+        },
+        { status: 400 },
+      )
+    }
+
+    const { count: existingCount, error: countError } = await supabase
+      .from('ai_knowledge_documents')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', accountId)
+    if (countError) {
+      console.error('[ai/knowledge POST] count error:', countError)
+      return NextResponse.json(
+        { error: 'Failed to validate knowledge base size' },
+        { status: 500 },
+      )
+    }
+    if ((existingCount ?? 0) >= MAX_KNOWLEDGE_DOCUMENTS_PER_ACCOUNT) {
+      return NextResponse.json(
+        {
+          error: `This account already has ${MAX_KNOWLEDGE_DOCUMENTS_PER_ACCOUNT} knowledge-base documents, the current limit. Delete or merge some before adding more.`,
+        },
         { status: 400 },
       )
     }

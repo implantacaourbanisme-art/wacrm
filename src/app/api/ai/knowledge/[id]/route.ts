@@ -6,7 +6,7 @@ import {
 } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadEmbeddingsKey } from '@/lib/ai/config'
-import { ingestDocument } from '@/lib/ai/knowledge'
+import { ingestDocument, MAX_KNOWLEDGE_DOCUMENT_CHARS } from '@/lib/ai/knowledge'
 import { AiError } from '@/lib/ai/types'
 
 type Params = { params: Promise<{ id: string }> }
@@ -42,7 +42,7 @@ export async function GET(_request: Request, { params }: Params) {
 export async function PATCH(request: Request, { params }: Params) {
   try {
     const { supabase, accountId, userId } = await requireRole('admin')
-    const limit = checkRateLimit(`ai-kb:${userId}`, RATE_LIMITS.adminAction)
+    const limit = await checkRateLimit(`ai-kb:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
 
     const { id } = await params
@@ -57,6 +57,14 @@ export async function PATCH(request: Request, { params }: Params) {
     }
     if (content !== undefined && !content) {
       return NextResponse.json({ error: 'content cannot be empty' }, { status: 400 })
+    }
+    if (content !== undefined && content.length > MAX_KNOWLEDGE_DOCUMENT_CHARS) {
+      return NextResponse.json(
+        {
+          error: `content exceeds the ${MAX_KNOWLEDGE_DOCUMENT_CHARS.toLocaleString('en-US')}-character limit per document. Split it into smaller documents.`,
+        },
+        { status: 400 },
+      )
     }
 
     const update: Record<string, string> = {}

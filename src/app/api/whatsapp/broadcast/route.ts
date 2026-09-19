@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
-import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
-import { decrypt } from '@/lib/whatsapp/encryption'
+import { resolveSendProvider } from '@/lib/whatsapp/provider'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
-import { resolveTemplateRow } from '@/lib/whatsapp/template-body'
+import {
+  resolveTemplateRow,
+  templateBodyParams,
+  templateContentText,
+} from '@/lib/whatsapp/template-body'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -77,7 +80,7 @@ export async function POST(request: Request) {
     // Per-user broadcast budget. Note: this limits how often a user
     // can *start* a campaign, not how many messages go out inside
     // one — the fan-out loop below runs without additional gating.
-    const limit = checkRateLimit(`broadcast:${userId}`, RATE_LIMITS.broadcast)
+    const limit = await checkRateLimit(`broadcast:${userId}`, RATE_LIMITS.broadcast)
     if (!limit.success) {
       return rateLimitResponse(limit)
     }
@@ -136,7 +139,13 @@ export async function POST(request: Request) {
       )
     }
 
-    const accessToken = decrypt(config.access_token)
+    let sendProvider
+    try {
+      sendProvider = resolveSendProvider(config)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'WhatsApp connection is misconfigured'
+      return NextResponse.json({ error: message }, { status: 400 })
+    }
 
     // Load the template row once so sendTemplateMessage can build
     // header + button components on each iteration. Loading inside
@@ -185,15 +194,19 @@ export async function POST(request: Request) {
 
       for (const variant of variants) {
         try {
-          const result = await sendTemplateMessage({
-            phoneNumberId: config.phone_number_id,
-            accessToken,
+          const result = await sendProvider.sendTemplate({
             to: variant,
             templateName: template_name,
             language: resolvedTemplate.language,
             template: templateRow ?? undefined,
             messageParams: recipient.messageParams,
             params: recipient.params ?? [],
+            // Z-API has no template system — this is what it actually
+            // sends (see provider.ts). Meta ignores it.
+            renderedText: templateContentText(
+              templateRow,
+              templateBodyParams(recipient.params, recipient.messageParams),
+            ),
           })
           sentMessageId = result.messageId
           lastError = null

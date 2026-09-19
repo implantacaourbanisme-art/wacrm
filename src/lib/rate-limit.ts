@@ -1,92 +1,184 @@
 /**
- * In-memory per-key rate limiter.
+ * Dual-backend rate limiter: Upstash Redis when configured, in-process
+ * Map otherwise.
  *
- * Fixed-window counter (not token bucket): every identifier gets a
- * fresh N-request budget each window. Simple, allocation-light, and
- * fine for a single-instance VPS — which is how forkers of this
- * template will usually deploy.
+ * ── Why two backends? ────────────────────────────────────────────────
+ * The original in-memory Map is correct for a single-instance VPS but
+ * silently defeats itself on horizontal scale: each process owns its
+ * own Map, so the effective limit multiplies by the number of instances.
+ * Upstash Redis stores counters atomically across every instance of the
+ * app, whether that's two Fly.io machines or hundreds of Vercel lambdas.
  *
- * Trade-off: a single Node process holds the Map, so horizontal scale
- * (multiple regions, multiple Hostinger nodes, Vercel serverless fan-
- * out) silently defeats the limit. If you scale beyond one instance,
- * swap the `check` implementation for Redis / Upstash / Cloudflare
- * Durable Objects keeping the same return shape. The call sites won't
- * change.
+ * ── Selecting the backend ───────────────────────────────────────────
+ * Set both env vars to enable Redis:
+ *   UPSTASH_REDIS_REST_URL=https://…upstash.io
+ *   UPSTASH_REDIS_REST_TOKEN=AX…
+ * Without them the module falls back to the in-memory implementation
+ * automatically — no code change, no crash, no 503 on startup.
  *
- * Memory: entries are ~50 bytes each. With LIGHT_SWEEP below, expired
- * keys get cleared opportunistically on every ~1 000th call, so a
- * healthy instance stays in the low-MB range even with thousands of
- * distinct users. No background timer — works in serverless edge
- * runtimes that don't keep timers alive across requests.
+ * ── API surface ─────────────────────────────────────────────────────
+ * `checkRateLimit` is now async. All public shapes (RateLimitOptions,
+ * RateLimitResult, RATE_LIMITS, rateLimitResponse) are unchanged; call
+ * sites only need `await` in front of checkRateLimit(…).
+ *
+ * ── Algorithm ───────────────────────────────────────────────────────
+ * Fixed-window in both backends for simplicity and predictability.
+ * Upstash's SlidingWindow is more accurate but adds a second Redis
+ * round-trip; fixed-window is fine for the 1-minute windows used here.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server'
+
+// ── Types (unchanged public surface) ────────────────────────────────
 
 export interface RateLimitOptions {
   /** Max requests allowed in `windowMs`. */
-  limit: number;
+  limit: number
   /** Window size, milliseconds. */
-  windowMs: number;
+  windowMs: number
 }
 
 export interface RateLimitResult {
-  success: boolean;
+  success: boolean
   /** Requests still allowed in the current window. */
-  remaining: number;
+  remaining: number
   /** Unix ms when the bucket refills. */
-  reset: number;
-  limit: number;
+  reset: number
+  limit: number
 }
+
+// ── Upstash Redis backend ────────────────────────────────────────────
+
+/**
+ * Lazy Upstash client + limiter cache. We build one Ratelimit instance
+ * per (limit, windowMs) pair because @upstash/ratelimit bakes the
+ * window size into the instance at construction time. With ~10 distinct
+ * RATE_LIMITS entries the cache stays tiny.
+ */
+type UpstashRatelimit = import('@upstash/ratelimit').Ratelimit
+
+let _upstashRatelimitCache: Map<string, UpstashRatelimit> | null = null
+
+function upstashKey(opts: RateLimitOptions) {
+  return `${opts.limit}:${opts.windowMs}`
+}
+
+async function getUpstashLimiter(
+  opts: RateLimitOptions,
+): Promise<UpstashRatelimit | null> {
+  const url = process.env.UPSTASH_REDIS_REST_URL
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+  if (!url || !token) return null
+
+  try {
+    const { Ratelimit } = await import('@upstash/ratelimit')
+    const { Redis } = await import('@upstash/redis')
+
+    if (!_upstashRatelimitCache) _upstashRatelimitCache = new Map()
+    const k = upstashKey(opts)
+    if (!_upstashRatelimitCache.has(k)) {
+      const redis = new Redis({ url, token })
+      _upstashRatelimitCache.set(
+        k,
+        new Ratelimit({
+          redis,
+          limiter: Ratelimit.fixedWindow(opts.limit, `${opts.windowMs} ms`),
+          // Prefix keeps wacrm's keys from colliding with other apps
+          // sharing the same Upstash database.
+          prefix: 'wacrm_rl',
+          // Don't wait for the analytics write — keep latency low.
+          analytics: false,
+        }),
+      )
+    }
+    return _upstashRatelimitCache.get(k)!
+  } catch (err) {
+    // Gracefully degrade: if the import or constructor fails (e.g. bad
+    // credentials at startup), fall through to the in-memory backend
+    // rather than crashing the request handler.
+    console.error('[rate-limit] Upstash init failed, falling back to in-memory:', err)
+    return null
+  }
+}
+
+async function checkUpstash(
+  key: string,
+  opts: RateLimitOptions,
+): Promise<RateLimitResult | null> {
+  const limiter = await getUpstashLimiter(opts)
+  if (!limiter) return null
+
+  try {
+    const result = await limiter.limit(key)
+    return {
+      success: result.success,
+      remaining: result.remaining,
+      reset: result.reset, // Unix ms
+      limit: result.limit,
+    }
+  } catch (err) {
+    // Upstash unavailable (network blip, cold-start timeout, …).
+    // Fail open: fall through to in-memory rather than blocking every
+    // request while Redis is down. A brief in-memory window keeps the
+    // feature mostly working.
+    console.error('[rate-limit] Upstash limit() failed, falling back to in-memory:', err)
+    return null
+  }
+}
+
+// ── In-memory backend (fallback / single-instance) ──────────────────
 
 interface Entry {
-  count: number;
-  resetAt: number;
+  count: number
+  resetAt: number
 }
 
-const buckets = new Map<string, Entry>();
-
-// Opportunistic cleanup. Running a sweep on every call would be
-// quadratic; running it 1-in-N lets the Map self-drain without a
-// background timer.
-const LIGHT_SWEEP_EVERY = 1000;
-let callsSinceSweep = 0;
+const buckets = new Map<string, Entry>()
+const LIGHT_SWEEP_EVERY = 1000
+let callsSinceSweep = 0
 
 function sweepExpired(now: number) {
   for (const [k, v] of buckets) {
-    if (v.resetAt <= now) buckets.delete(k);
+    if (v.resetAt <= now) buckets.delete(k)
   }
 }
 
-export function checkRateLimit(
-  key: string,
-  { limit, windowMs }: RateLimitOptions,
-): RateLimitResult {
-  const now = Date.now();
-
-  callsSinceSweep += 1;
+function checkInMemory(key: string, { limit, windowMs }: RateLimitOptions): RateLimitResult {
+  const now = Date.now()
+  callsSinceSweep += 1
   if (callsSinceSweep >= LIGHT_SWEEP_EVERY) {
-    callsSinceSweep = 0;
-    sweepExpired(now);
+    callsSinceSweep = 0
+    sweepExpired(now)
   }
 
-  const entry = buckets.get(key);
-
+  const entry = buckets.get(key)
   if (!entry || entry.resetAt <= now) {
-    buckets.set(key, { count: 1, resetAt: now + windowMs });
-    return { success: true, remaining: limit - 1, reset: now + windowMs, limit };
+    buckets.set(key, { count: 1, resetAt: now + windowMs })
+    return { success: true, remaining: limit - 1, reset: now + windowMs, limit }
   }
-
   if (entry.count >= limit) {
-    return { success: false, remaining: 0, reset: entry.resetAt, limit };
+    return { success: false, remaining: 0, reset: entry.resetAt, limit }
   }
+  entry.count += 1
+  return { success: true, remaining: limit - entry.count, reset: entry.resetAt, limit }
+}
 
-  entry.count += 1;
-  return {
-    success: true,
-    remaining: limit - entry.count,
-    reset: entry.resetAt,
-    limit,
-  };
+// ── Public API ───────────────────────────────────────────────────────
+
+/**
+ * Check and consume one request token for `key`.
+ *
+ * Uses Upstash Redis when UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
+ * are set; falls back to in-process Map otherwise (safe for single-instance
+ * deploys, silent on startup without the env vars).
+ */
+export async function checkRateLimit(
+  key: string,
+  opts: RateLimitOptions,
+): Promise<RateLimitResult> {
+  const upstash = await checkUpstash(key, opts)
+  if (upstash) return upstash
+  return checkInMemory(key, opts)
 }
 
 /**
@@ -94,7 +186,7 @@ export function checkRateLimit(
  * draft-ietf-httpapi-ratelimit-headers). Callers just `return` this.
  */
 export function rateLimitResponse(result: RateLimitResult): NextResponse {
-  const retryAfterSec = Math.max(1, Math.ceil((result.reset - Date.now()) / 1000));
+  const retryAfterSec = Math.max(1, Math.ceil((result.reset - Date.now()) / 1000))
   return NextResponse.json(
     {
       error: 'Rate limit exceeded',
@@ -109,75 +201,39 @@ export function rateLimitResponse(result: RateLimitResult): NextResponse {
         'X-RateLimit-Reset': String(Math.ceil(result.reset / 1000)),
       },
     },
-  );
+  )
 }
 
-/** Preconfigured budgets, tweak here not at call sites. */
+/** Preconfigured budgets — tweak here, not at call sites. */
 export const RATE_LIMITS = {
-  /** Individual message send. 60/min per user = one per second
-   *  sustained, comfortable for a live human typing. */
+  /** Individual message send. 60/min per user = one per second sustained. */
   send: { limit: 60, windowMs: 60_000 },
-  /** Broadcast dispatch. NOT one call per campaign: the wizard fans a
-   *  campaign out over `/api/whatsapp/broadcast` in batches of 10
-   *  recipients, roughly one call every 1–2 s, so a 1 000-recipient
-   *  send is ~100 calls over several minutes. This bucket was 5/min on
-   *  the assumption of one call per campaign, which meant everything
-   *  past the first ~50 recipients came back 429 and was recorded as a
-   *  failed recipient (issue #472). 60/min per user carries the wizard's
-   *  pacing with headroom while still bounding a script in a loop;
-   *  Meta's own per-number limits remain the real throughput ceiling. */
+  /** Manual automation trigger — same cost class as `send`. */
+  automationsEngine: { limit: 60, windowMs: 60_000 },
+  /** Broadcast batches. The wizard fans out in batches of 10, ~1/s. */
   broadcast: { limit: 60, windowMs: 60_000 },
-  /** Reaction add/swap/remove. More permissive than send — users
-   *  fidget with reactions and a single "swap" is actually two calls
-   *  (remove + add) under the hood. */
+  /** Reactions — permissive; a swap is two calls under the hood. */
   react: { limit: 120, windowMs: 60_000 },
-  /** Invitation peek (public, per-IP). 30/min lets a forwarded link
-   *  retry a handful of times under flaky connectivity without
-   *  enabling brute-force token enumeration. With 256-bit tokens the
-   *  enumeration risk is theoretical; this is belt-and-braces. */
+  /** Invitation peek (public, per-IP). */
   invitationPeek: { limit: 30, windowMs: 60_000 },
-  /** Invitation redeem (authed, per-IP+user). Tighter than peek —
-   *  successful redemption mutates two profiles and an invite row, so
-   *  the abuse surface is "spam join attempts." */
+  /** Invitation redeem (authed, per-IP+user). */
   invitationRedeem: { limit: 10, windowMs: 60_000 },
-  /** Admin-only account / member-management actions: create/revoke
-   *  invitation, rename account, change member role, remove member,
-   *  transfer ownership. 30/min per user is comfortably above any
-   *  realistic legitimate use (the Members tab is a clicks-only UI)
-   *  while still bounding accidental abuse from a script run in a
-   *  loop or a compromised admin session spamming role flips. */
+  /** Admin account / member management actions. */
   adminAction: { limit: 30, windowMs: 60_000 },
-  /** Public REST API (`/api/v1/*`), keyed per API key. 120/min ≈ 2
-   *  req/s sustained — comfortable for a polling integration or an
-   *  automation firing on inbound events, while bounding a runaway
-   *  script. Like every bucket here it's per-process; a multi-
-   *  instance deploy needs the Redis swap described at the top of
-   *  this file (the per-key call sites don't change). */
+  /** Public REST API (/api/v1/*), per API key. */
   publicApi: { limit: 120, windowMs: 60_000 },
-  /** AI draft-reply generation, per user. 20/min is generous for an
-   *  agent clicking "Draft with AI" while working a thread, and bounds
-   *  spend on the account's own LLM key against an accidental
-   *  hold-down / script. */
+  /** AI draft-reply generation, per user. */
   aiDraft: { limit: 20, windowMs: 60_000 },
-  /** AI draft-reply generation, per account. Caps the WHOLE team's
-   *  draws on the one shared BYO provider key — without this, N agents
-   *  each under their per-user limit could still stampede the account's
-   *  key past the provider's own rate limit. 60/min ≈ three busy agents
-   *  drafting flat-out. */
+  /** AI draft-reply generation, per account (shared BYO key cap). */
   aiDraftAccount: { limit: 60, windowMs: 60_000 },
-  /** AI auto-reply generation, per account. The per-conversation cap
-   *  (`auto_reply_max_per_conversation`) bounds one thread; this bounds
-   *  the whole account across threads, so a burst of inbound from many
-   *  customers at once can't run the BYO key past the provider's limit
-   *  or the owner's budget. 30/min is generous for organic inbound while
-   *  capping a stampede; excess inbounds simply don't get an auto-reply
-   *  (they still land in the inbox for a human). */
+  /** AI auto-reply, per account — bounds stampedes across threads. */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
-} as const;
+} as const
 
-/** Test-only helper. Clears the in-memory state so unit tests don't
- *  leak buckets across files. Not wired up in production code. */
+/** Test-only: clear in-memory state between tests. Also clears the
+ *  Upstash limiter cache so tests that mock env vars get a fresh client. */
 export function __resetRateLimitForTests() {
-  buckets.clear();
-  callsSinceSweep = 0;
+  buckets.clear()
+  callsSinceSweep = 0
+  _upstashRatelimitCache = null
 }

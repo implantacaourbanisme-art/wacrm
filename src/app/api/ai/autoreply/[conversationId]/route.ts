@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { dispatchConversationAssignedTrigger } from '@/lib/conversations/assign'
 
 type Params = { params: Promise<{ conversationId: string }> }
 
@@ -30,7 +31,7 @@ export async function POST(request: Request, { params }: Params) {
 
     // Reuse the send bucket: this is a cheap per-user inbox action and
     // toggling it in a tight loop has no legitimate use.
-    const limit = checkRateLimit(`ai-takeover:${userId}`, RATE_LIMITS.send)
+    const limit = await checkRateLimit(`ai-takeover:${userId}`, RATE_LIMITS.send)
     if (!limit.success) return rateLimitResponse(limit)
 
     const { conversationId } = await params
@@ -47,7 +48,7 @@ export async function POST(request: Request, { params }: Params) {
     // Confirm the conversation is in the caller's account before writing.
     const { data: conv, error: convErr } = await supabase
       .from('conversations')
-      .select('id')
+      .select('id, contact_id')
       .eq('id', conversationId)
       .eq('account_id', accountId)
       .maybeSingle()
@@ -94,6 +95,15 @@ export async function POST(request: Request, { params }: Params) {
         { error: 'Failed to update conversation' },
         { status: 500 },
       )
+    }
+
+    if (paused && assignToMe) {
+      await dispatchConversationAssignedTrigger({
+        accountId,
+        conversationId,
+        contactId: conv.contact_id as string | null,
+        agentId: userId,
+      })
     }
 
     return NextResponse.json({ success: true, paused })

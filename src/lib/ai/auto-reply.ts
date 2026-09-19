@@ -3,7 +3,8 @@ import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
 import { generateReply } from './generate'
-import { buildSystemPrompt } from './defaults'
+import { buildSystemPrompt, maxAutoRepliesPerAccountPerMonth } from './defaults'
+import { dispatchConversationAssignedTrigger } from '@/lib/conversations/assign'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
@@ -101,13 +102,39 @@ export async function dispatchInboundToAiReply(
     // marketing blast landing 200 replies at once) so we never run the
     // owner's key past the provider's rate limit. Over the limit → skip
     // the auto-reply; the inbound still sits in the inbox for a human.
-    const acctLimit = checkRateLimit(
+    const acctLimit = await checkRateLimit(
       `ai-autoreply:${accountId}`,
       RATE_LIMITS.aiAutoReplyAccount,
     )
     if (!acctLimit.success) {
       console.warn(
         `[ai auto-reply] account ${accountId} hit the per-account rate limit — skipping this inbound.`,
+      )
+      return
+    }
+
+    // Durable, account-wide monthly ceiling — see
+    // maxAutoRepliesPerAccountPerMonth's doc comment for why the
+    // per-minute limit above isn't enough on its own. Checked after
+    // the free in-memory rate limit (cheaper to fail on) but before
+    // the knowledge/LLM round trip (most expensive part of this path).
+    const monthStart = new Date()
+    monthStart.setUTCDate(1)
+    monthStart.setUTCHours(0, 0, 0, 0)
+    const { count: monthlyReplyCount, error: usageCountErr } = await db
+      .from('ai_usage_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', accountId)
+      .eq('mode', 'auto_reply')
+      .gte('created_at', monthStart.toISOString())
+    if (usageCountErr) {
+      // Fail open on a read error here — the per-minute rate limit and
+      // per-conversation cap above still bound the worst case, and a
+      // transient DB hiccup shouldn't stop every account's auto-reply.
+      console.error('[ai auto-reply] monthly usage count failed:', usageCountErr)
+    } else if ((monthlyReplyCount ?? 0) >= maxAutoRepliesPerAccountPerMonth()) {
+      console.warn(
+        `[ai auto-reply] account ${accountId} hit its monthly auto-reply cap (${maxAutoRepliesPerAccountPerMonth()}) — skipping this inbound.`,
       )
       return
     }
@@ -174,10 +201,19 @@ export async function dispatchInboundToAiReply(
       }
       // Only set the assignee when a target is configured AND the thread
       // isn't already owned — never stomp an existing human assignment.
-      if (config.handoffAgentId && !conv.assigned_agent_id) {
+      const assigning = Boolean(config.handoffAgentId && !conv.assigned_agent_id)
+      if (assigning) {
         update.assigned_agent_id = config.handoffAgentId
       }
       await db.from('conversations').update(update).eq('id', conversationId)
+      if (assigning && config.handoffAgentId) {
+        await dispatchConversationAssignedTrigger({
+          accountId,
+          conversationId,
+          contactId,
+          agentId: config.handoffAgentId,
+        })
+      }
       return
     }
 
