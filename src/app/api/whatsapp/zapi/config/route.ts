@@ -111,7 +111,6 @@ export async function POST(request: Request) {
     // comment) — its failure alone shouldn't read as "the connection
     // is broken," so it's reported separately from the received-
     // webhook error.
-    const webhookUrl = `${webhookBaseUrl(request)}/api/whatsapp/zapi/webhook`
     const webhookUrl = `${webhookBaseUrl(request)}/api/whatsapp/zapi/webhook?token=${encodeURIComponent(clientToken)}`
     let webhookError: string | null = null
     try {

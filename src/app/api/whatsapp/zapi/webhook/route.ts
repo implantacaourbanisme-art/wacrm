@@ -74,7 +74,6 @@ interface ZApiReaction {
   referencedMessage?: { messageId: string }
 }
 
-interface ZApiWebhookBody {
 export interface ZApiWebhookBody {
   instanceId: string
   /** Discriminator between the two event shapes this route handles —
@@ -149,7 +148,6 @@ export function mapZApiStatus(raw: string | undefined): NormalizedDeliveryStatus
   }
 }
 
-function normalizeContent(body: ZApiWebhookBody): {
 export function normalizeContent(body: ZApiWebhookBody): {
   contentType: NormalizedContentType
   rawTypeLabel: string
@@ -159,13 +157,6 @@ export function normalizeContent(body: ZApiWebhookBody): {
   interactiveReplyId: string | null
 } {
   if (body.text) {
-    return {
-      contentType: 'text',
-      rawTypeLabel: 'text',
-      contentText: body.text.message || null,
-      mediaUrl: null,
-      mediaType: null,
-      interactiveReplyId: null,
     const textMsg = typeof body.text === 'string' ? body.text : body.text.message
     if (textMsg) {
       return {
@@ -203,7 +194,6 @@ export function normalizeContent(body: ZApiWebhookBody): {
       rawTypeLabel: 'image',
       contentText: body.image.caption || null,
       mediaUrl: body.image.imageUrl || null,
-      mediaType: body.image.mimeType || null,
       mediaType: body.image.mimeType || 'image/jpeg',
       interactiveReplyId: null,
     }
@@ -214,7 +204,6 @@ export function normalizeContent(body: ZApiWebhookBody): {
       rawTypeLabel: 'video',
       contentText: body.video.caption || null,
       mediaUrl: body.video.videoUrl || null,
-      mediaType: body.video.mimeType || null,
       mediaType: body.video.mimeType || 'video/mp4',
       interactiveReplyId: null,
     }
@@ -225,7 +214,6 @@ export function normalizeContent(body: ZApiWebhookBody): {
       rawTypeLabel: 'document',
       contentText: body.document.fileName || null,
       mediaUrl: body.document.documentUrl || null,
-      mediaType: body.document.mimeType || null,
       mediaType: body.document.mimeType || 'application/pdf',
       interactiveReplyId: null,
     }
@@ -236,7 +224,6 @@ export function normalizeContent(body: ZApiWebhookBody): {
       rawTypeLabel: 'audio',
       contentText: null,
       mediaUrl: body.audio.audioUrl || null,
-      mediaType: body.audio.mimeType || null,
       mediaType: body.audio.mimeType || 'audio/ogg',
       interactiveReplyId: null,
     }
