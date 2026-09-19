@@ -82,7 +82,6 @@ export interface ZApiWebhookBody {
    *  message (matches this route's pre-status-support behavior). */
   type?: string
   messageId: string
-  phone: string
   phone?: string
   senderPhone?: string
   sender?: string
@@ -102,7 +101,6 @@ export interface ZApiWebhookBody {
   senderName?: string
   /** Present on a swipe-reply to a non-reaction message. */
   referenceMessageId?: string
-  text?: ZApiTextContent
   text?: ZApiTextContent | string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   message?: any
@@ -406,16 +404,13 @@ async function processZApiWebhook(
     ''
 
   const identity: WaIdentity = {
-    phone: normalizePhone(body.phone ?? ''),
     phone: normalizePhone(rawPhone ?? ''),
     waUserId: null,
     waParentUserId: null,
     waUsername: null,
-    name: body.senderName?.trim() ?? '',
     name: contactName,
   }
   if (!hasUsableIdentity(identity)) {
-    console.error('[zapi-webhook] inbound event carries no usable phone; skipping:', body.messageId)
     console.error(
       '[zapi-webhook] inbound event carries no usable phone; skipping:',
       body.messageId,
