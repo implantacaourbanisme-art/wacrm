@@ -14,16 +14,17 @@
  */
 
 export const THEME_IDS = [
-  "violet",
+  "urbanisme",
   "emerald",
   "cobalt",
+  "violet",
   "amber",
   "rose",
 ] as const;
 
 export type ThemeId = (typeof THEME_IDS)[number];
 
-export const DEFAULT_THEME: ThemeId = "violet";
+export const DEFAULT_THEME: ThemeId = "urbanisme";
 
 export const STORAGE_KEY = "wacrm.theme";
 
@@ -67,6 +68,12 @@ export interface ThemeMeta {
 }
 
 export const THEMES: ReadonlyArray<ThemeMeta> = [
+  {
+    id: "urbanisme",
+    name: "Urbanisme",
+    tagline: "Identidade oficial Urbanisme Construtora e Incorporadora.",
+    swatch: "oklch(0.77 0.19 125)",
+  },
   {
     id: "violet",
     name: "Violet",

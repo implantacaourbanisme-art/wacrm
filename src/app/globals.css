@@ -148,6 +148,20 @@ html[data-mode="light"] {
 /* ---- ACCENT: primary color ---- */
 
 :root,
+html[data-theme="urbanisme"] {
+  --primary: oklch(0.77 0.19 125);
+  --primary-foreground: oklch(0.14 0.02 125);
+  --primary-hover: oklch(0.72 0.18 125);
+  --primary-soft: oklch(0.77 0.19 125 / 0.12);
+  --primary-soft-2: oklch(0.77 0.19 125 / 0.22);
+  --ring: oklch(0.77 0.19 125);
+  --chart-1: oklch(0.77 0.19 125);
+  --chart-2: oklch(0.65 0.15 140);
+  --sidebar-primary: oklch(0.77 0.19 125);
+  --sidebar-primary-foreground: oklch(0.14 0.02 125);
+  --sidebar-ring: oklch(0.77 0.19 125);
+}
+
 html[data-theme="violet"] {
   --primary: oklch(0.526 0.247 293);
   --primary-foreground: oklch(0.985 0 0);

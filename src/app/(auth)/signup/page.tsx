@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
@@ -134,19 +135,30 @@ function SignupPageInner() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
-        <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            {inviteToken ? (
-              <UsersRound className="h-6 w-6 text-primary" />
-            ) : (
-              <MessageSquare className="h-6 w-6 text-primary" />
-            )}
+      <Card className="w-full max-w-md border-border bg-card shadow-xl shadow-black/20">
+        <CardHeader className="items-center text-center pt-8 pb-4">
+          <div className="mb-5 flex items-center justify-center">
+            <Image
+              src="/urbanisme-logo-white.png"
+              alt="Urbanisme Construtora e Incorporadora"
+              width={200}
+              height={106}
+              className="h-14 w-auto object-contain dark:block hidden"
+              priority
+            />
+            <Image
+              src="/urbanisme-logo-dark.png"
+              alt="Urbanisme Construtora e Incorporadora"
+              width={200}
+              height={106}
+              className="h-14 w-auto object-contain dark:hidden block"
+              priority
+            />
           </div>
-          <CardTitle className="text-xl text-foreground">
+          <CardTitle className="text-base font-semibold tracking-tight text-foreground">
             {inviteToken ? t("titleJoin") : t("title")}
           </CardTitle>
-          <CardDescription className="text-muted-foreground">
+          <CardDescription className="text-xs text-muted-foreground mt-0.5">
             {inviteToken ? t("descJoin") : t("desc")}
           </CardDescription>
         </CardHeader>

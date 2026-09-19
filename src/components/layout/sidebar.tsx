@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -187,11 +188,17 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         {/* Logo row. On mobile we put a close button here; on desktop the
             close button is hidden since the sidebar is always-visible. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <MessageSquare className="h-4 w-4" />
+          <Link href="/dashboard" className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 border border-primary/20 p-1 shrink-0">
+              <Image
+                src="/urbanisme-icon.png"
+                alt="Urbanisme"
+                width={24}
+                height={24}
+                className="h-5 w-5 object-contain"
+              />
             </div>
-            <span className="text-sm font-semibold text-foreground">
+            <span className="text-sm font-semibold tracking-tight text-foreground">
               {t("title")}
             </span>
           </Link>
