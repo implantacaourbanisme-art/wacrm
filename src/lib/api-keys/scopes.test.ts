@@ -61,3 +61,18 @@ describe('SCOPE_DESCRIPTIONS', () => {
     }
   });
 });
+
+describe('conversations:write scope', () => {
+  it('is a declared, describable scope', () => {
+    expect(isApiScope('conversations:write')).toBe(true);
+    expect(API_SCOPES).toContain('conversations:write');
+    expect(SCOPE_DESCRIPTIONS['conversations:write']).toMatch(/handoff|assign/i);
+  });
+
+  it('survives normalizeScopes alongside other scopes', () => {
+    expect(normalizeScopes(['conversations:read', 'conversations:write'])).toEqual([
+      'conversations:read',
+      'conversations:write',
+    ]);
+  });
+});
