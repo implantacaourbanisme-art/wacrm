@@ -8,7 +8,11 @@ import {
 } from '@/lib/whatsapp/inbound-pipeline'
 import { hasUsableIdentity, type WaIdentity } from '@/lib/whatsapp/wa-identity'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
-import { classifyZApiMessageEvent, isMirrorRequest } from '@/lib/whatsapp/mirror-mode'
+import {
+  classifyZApiMessageEvent,
+  isMirrorAuthMissing,
+  isMirrorRequest,
+} from '@/lib/whatsapp/mirror-mode'
 import {
   ingestStatusUpdate,
   type NormalizedDeliveryStatus,
@@ -333,6 +337,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ status: 'unknown_instance' })
   }
 
+  const mirror = isMirrorRequest(request.url)
+
   // Tenancy is anchored on body.instanceId matching zapi_instance_id in DB.
   // If a client-token is provided (via custom header or ?token= query param),
   // validate it against the stored decrypted token.
@@ -341,6 +347,13 @@ export async function POST(request: Request) {
   const clientToken =
     request.headers.get('client-token') ||
     new URL(request.url).searchParams.get('token')
+
+  // Mirror traffic comes from n8n (which can send the header), so unlike
+  // Z-API's own callbacks it must always be authenticated.
+  if (isMirrorAuthMissing(mirror, clientToken, config.zapi_client_token)) {
+    console.warn('[zapi-webhook] rejected mirror request without client-token')
+    return NextResponse.json({ error: 'client-token required in mirror mode' }, { status: 401 })
+  }
 
   if (clientToken && config.zapi_client_token) {
     try {
@@ -356,8 +369,6 @@ export async function POST(request: Request) {
   }
 
   console.info(`[zapi-webhook] accepted webhook for instanceId: ${body.instanceId} (type: ${body.type || 'message'})`)
-
-  const mirror = isMirrorRequest(request.url)
 
   after(async () => {
     try {
@@ -404,11 +415,11 @@ async function processZApiWebhook(
     : undefined
   // Z-API identities are always phone-based — there's no BSUID/username
   // concept here (that's specific to Meta's username rollout).
-  const rawPhone =
-    body.phone ||
-    body.senderPhone ||
-    body.sender ||
-    (body.chatId ? body.chatId.replace(/@.*$/, '') : '')
+  // On fromMe, senderPhone/sender is OUR own number — never the customer.
+  const chatPhone = body.chatId ? body.chatId.replace(/@.*$/, '') : ''
+  const rawPhone = isOutbound
+    ? body.phone || chatPhone
+    : body.phone || body.senderPhone || body.sender || chatPhone
 
   // On fromMe, senderName is our own profile, not the customer's.
   const contactName = isOutbound
@@ -432,7 +443,10 @@ async function processZApiWebhook(
     return
   }
 
-  if (isOutbound && body.reaction) return
+  if (isOutbound && body.reaction) {
+    console.info('[zapi-webhook] skipping outbound reaction:', body.messageId)
+    return
+  }
 
   if (body.reaction) {
     console.info(`[zapi-webhook] ingesting reaction from ${identity.phone} on ${body.reaction.referencedMessage?.messageId}`)

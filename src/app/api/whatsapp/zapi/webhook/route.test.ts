@@ -101,7 +101,7 @@ describe('normalizeContent', () => {
   })
 })
 
-describe('webhook route wiring contract', () => {
+describe('classifyZApiMessageEvent contract used by the webhook route', () => {
   it('uses the shared classifier: fromMe is only ingested in mirror mode', () => {
     expect(classifyZApiMessageEvent({ fromMe: true }, false)).toBe('skip_outbound_echo')
     expect(classifyZApiMessageEvent({ fromMe: true }, true)).toBe('ingest_outbound')

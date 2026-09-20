@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   classifyZApiMessageEvent,
+  isMirrorAuthMissing,
   isMirrorRequest,
   wantsSkipWebhookRegistration,
 } from './mirror-mode'
@@ -46,5 +47,25 @@ describe('wantsSkipWebhookRegistration', () => {
     expect(wantsSkipWebhookRegistration({ skip_webhook_registration: 'true' })).toBe(false)
     expect(wantsSkipWebhookRegistration(null)).toBe(false)
     expect(wantsSkipWebhookRegistration('x')).toBe(false)
+  })
+})
+
+describe('isMirrorAuthMissing', () => {
+  it('is never missing outside mirror mode', () => {
+    expect(isMirrorAuthMissing(false, null, null)).toBe(false)
+    expect(isMirrorAuthMissing(false, '', undefined)).toBe(false)
+    expect(isMirrorAuthMissing(false, 'a', 'b')).toBe(false)
+  })
+  it('is ok in mirror mode when both tokens are present', () => {
+    expect(isMirrorAuthMissing(true, 'a', 'b')).toBe(false)
+  })
+  it('is missing in mirror mode when the supplied token is absent', () => {
+    expect(isMirrorAuthMissing(true, null, 'b')).toBe(true)
+    expect(isMirrorAuthMissing(true, '', 'b')).toBe(true)
+  })
+  it('is missing in mirror mode when no token is stored', () => {
+    expect(isMirrorAuthMissing(true, 'a', null)).toBe(true)
+    expect(isMirrorAuthMissing(true, 'a', undefined)).toBe(true)
+    expect(isMirrorAuthMissing(true, 'a', '')).toBe(true)
   })
 })

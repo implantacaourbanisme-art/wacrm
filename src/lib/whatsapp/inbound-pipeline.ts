@@ -86,8 +86,10 @@ export interface IngestInboundArgs {
   message?: NormalizedInboundMessage
   /** Mirror mode — the message is a COPY of traffic the n8n bot already
    *  handles. Persist it (contact, conversation, message) so the Inbox
-   *  shows it, but never run Flows / Automations / AI auto-reply /
-   *  public webhooks. `outbound` records our own (bot / attendant)
+   *  shows it, but never run Flows / Automations / AI auto-reply nor the
+   *  message.received / conversation.created webhooks (delivery/read
+   *  status callbacks are handled elsewhere and still fire their status
+   *  webhook). `outbound` records our own (bot / attendant)
    *  message: sender_type 'bot', status 'sent', no unread bump. */
   mirror?: { direction: 'inbound' | 'outbound' }
 }
@@ -507,14 +509,17 @@ export async function ingestInboundMessage(args: IngestInboundArgs): Promise<voi
   if (isOutbound) {
     // Our own message: keep the thread summary fresh but do NOT count
     // it as unread.
+    // Guarded so an older echo never moves last_message_at backwards.
+    const messageIso = new Date(message.timestampMs).toISOString()
     const { error: touchError } = await supabaseAdmin()
       .from('conversations')
       .update({
         last_message_text: message.contentText || `[${message.rawTypeLabel}]`,
-        last_message_at: new Date(message.timestampMs).toISOString(),
+        last_message_at: messageIso,
         updated_at: new Date().toISOString(),
       })
       .eq('id', conversation.id)
+      .or(`last_message_at.is.null,last_message_at.lt.${messageIso}`)
     if (touchError) {
       console.error('[inbound-pipeline] Error updating conversation (outbound mirror):', touchError)
     }

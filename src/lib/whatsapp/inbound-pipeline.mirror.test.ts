@@ -5,6 +5,8 @@ const h = vi.hoisted(() => ({
   messageUpserts: [] as Record<string, unknown>[],
   convUpdates: [] as Record<string, unknown>[],
   rpcCalls: [] as { fn: string; args: unknown }[],
+  upsertRows: [{ id: 'm1' }] as { id: string }[],
+  convFilters: [] as string[],
 }))
 
 // Chainable, awaitable fake of the Supabase query builder: every method
@@ -16,7 +18,7 @@ vi.mock('@/lib/flows/admin-client', () => {
     const result = () => {
       if (table === 'messages' && op === 'upsert') {
         h.messageUpserts.push(payload as Record<string, unknown>)
-        return { data: [{ id: 'm1' }], error: null }
+        return { data: h.upsertRows, error: null }
       }
       if (table === 'messages') return { data: null, count: 0, error: null }
       if (table === 'conversations' && op === 'update') {
@@ -36,6 +38,7 @@ vi.mock('@/lib/flows/admin-client', () => {
             return (res: any, rej: any) => Promise.resolve(result()).then(res, rej)
           }
           return (...args: unknown[]) => {
+            if (table === 'conversations' && prop === 'or') h.convFilters.push(String(args[0]))
             if (['insert', 'update', 'upsert', 'delete'].includes(prop)) {
               op = prop
               payload = args[0]
@@ -121,6 +124,9 @@ beforeEach(() => {
   h.messageUpserts.length = 0
   h.convUpdates.length = 0
   h.rpcCalls.length = 0
+  h.convFilters.length = 0
+  h.upsertRows = [{ id: 'm1' }]
+  vi.clearAllMocks()
 })
 
 describe('ingestInboundMessage — mirror mode', () => {
@@ -153,6 +159,23 @@ describe('ingestInboundMessage — mirror mode', () => {
     expect(h.rpcCalls).toHaveLength(0)
     expect(h.convUpdates).toHaveLength(1)
     expect(h.convUpdates[0]).toMatchObject({ last_message_text: 'Oi! Sou o bot' })
+    expectNoDispatch()
+  })
+
+  it('outbound mirror: never moves last_message_at backwards (guarded update)', async () => {
+    await ingestInboundMessage({ ...base, mirror: { direction: 'outbound' } })
+
+    const iso = new Date(base.message.timestampMs).toISOString()
+    expect(h.convFilters).toContain(`last_message_at.is.null,last_message_at.lt.${iso}`)
+  })
+
+  it('duplicate message id (upsert returns no rows): no conversation update, no bump, no dispatch', async () => {
+    h.upsertRows = []
+    await ingestInboundMessage({ ...base, mirror: { direction: 'outbound' } })
+    await ingestInboundMessage({ ...base, mirror: { direction: 'inbound' } })
+
+    expect(h.convUpdates).toHaveLength(0)
+    expect(h.rpcCalls).toHaveLength(0)
     expectNoDispatch()
   })
 })
