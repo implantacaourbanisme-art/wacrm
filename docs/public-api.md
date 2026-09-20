@@ -194,6 +194,41 @@ match returns `200` with the existing contact; a new contact returns
 `201`. The response body is the serialized contact (same shape as the
 list rows above).
 
+### `POST /api/v1/contacts/sync`
+
+Idempotent bulk upsert of contacts (at most 100 per call). Scope:
+`contacts:write`. Each item needs `phone`; `name`, `email` and
+`custom_fields` (a `{ "<field name>": "<value>" }` map) are optional.
+Contacts are matched by phone (same fuzzy match as `POST /contacts`)
+and created when missing.
+
+```json
+{
+  "contacts": [
+    {
+      "phone": "+558296004382", "name": "Ana", "email": "ana@x.com",
+      "custom_fields": { "CPF/CNPJ": "529.982.247-25" }
+    }
+  ]
+}
+```
+
+Response (`200`):
+
+```json
+{ "data": { "created": 1, "updated": 0, "unchanged": 0,
+            "failed": [{ "index": 2, "phone": "…", "error": "…" }] } }
+```
+
+Conflict rules: a non-empty `email` or custom value in the body wins
+when it differs from what is stored; `name` only fills a contact whose
+name is empty (or just its phone number); nothing is ever blanked or
+deleted. Custom fields are created on first use. `CPF/CNPJ` accepts a
+CPF or CNPJ with or without punctuation, is stored as digits only, and
+is ignored when it does not have 11 or 14 digits. A failing item is
+reported in `failed` (by its `index` in the request) and does not stop
+the rest of the batch.
+
 ### `GET` / `PATCH /api/v1/contacts/{id}`
 
 Read or update one contact. Scopes: `contacts:read` / `contacts:write`.
