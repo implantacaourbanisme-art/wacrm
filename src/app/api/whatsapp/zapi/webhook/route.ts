@@ -8,6 +8,7 @@ import {
 } from '@/lib/whatsapp/inbound-pipeline'
 import { hasUsableIdentity, type WaIdentity } from '@/lib/whatsapp/wa-identity'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
+import { classifyZApiMessageEvent, isMirrorRequest } from '@/lib/whatsapp/mirror-mode'
 import {
   ingestStatusUpdate,
   type NormalizedDeliveryStatus,
@@ -356,9 +357,11 @@ export async function POST(request: Request) {
 
   console.info(`[zapi-webhook] accepted webhook for instanceId: ${body.instanceId} (type: ${body.type || 'message'})`)
 
+  const mirror = isMirrorRequest(request.url)
+
   after(async () => {
     try {
-      await processZApiWebhook(body, config)
+      await processZApiWebhook(body, config, mirror)
     } catch (error) {
       console.error('[zapi-webhook] Error processing webhook:', error)
     }
@@ -370,7 +373,8 @@ export async function POST(request: Request) {
 async function processZApiWebhook(
   body: ZApiWebhookBody,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  config: any
+  config: any,
+  mirror: boolean
 ): Promise<void> {
   if (body.type === 'MessageStatusCallback') {
     const normalizedStatus = mapZApiStatus(body.status)
@@ -382,17 +386,22 @@ async function processZApiWebhook(
     return
   }
 
-  // Never ingest our own outbound sends echoed back, and never ingest
-  // group traffic — this CRM's contact model is 1:1, same as Meta's
-  // Cloud API (which never delivers group messages at all).
-  if (body.fromMe) {
+  // Without ?mirror=1: never ingest our own outbound echoes and never
+  // ingest group traffic (1:1 contact model). In mirror mode fromMe
+  // messages are recorded as outbound.
+  const action = classifyZApiMessageEvent(body, mirror)
+  if (action === 'skip_outbound_echo') {
     console.info('[zapi-webhook] skipping outbound echo (fromMe=true):', body.messageId, 'phone:', body.phone)
     return
   }
-  if (body.isGroup) {
+  if (action === 'skip_group') {
     console.info('[zapi-webhook] skipping group message:', body.messageId)
     return
   }
+  const isOutbound = action === 'ingest_outbound'
+  const mirrorArg = mirror
+    ? { direction: isOutbound ? ('outbound' as const) : ('inbound' as const) }
+    : undefined
   // Z-API identities are always phone-based — there's no BSUID/username
   // concept here (that's specific to Meta's username rollout).
   const rawPhone =
@@ -401,10 +410,10 @@ async function processZApiWebhook(
     body.sender ||
     (body.chatId ? body.chatId.replace(/@.*$/, '') : '')
 
-  const contactName =
-    body.senderName?.trim() ||
-    body.chatName?.trim() ||
-    ''
+  // On fromMe, senderName is our own profile, not the customer's.
+  const contactName = isOutbound
+    ? body.chatName?.trim() || ''
+    : body.senderName?.trim() || body.chatName?.trim() || ''
 
   const identity: WaIdentity = {
     phone: normalizePhone(rawPhone ?? ''),
@@ -423,6 +432,8 @@ async function processZApiWebhook(
     return
   }
 
+  if (isOutbound && body.reaction) return
+
   if (body.reaction) {
     console.info(`[zapi-webhook] ingesting reaction from ${identity.phone} on ${body.reaction.referencedMessage?.messageId}`)
     await ingestInboundMessage({
@@ -433,6 +444,7 @@ async function processZApiWebhook(
         targetProviderMessageId: body.reaction.referencedMessage?.messageId ?? '',
         emoji: body.reaction.value ?? '',
       },
+      mirror: mirrorArg,
     })
     return
   }
@@ -459,5 +471,6 @@ async function processZApiWebhook(
     configOwnerUserId: config.user_id,
     identity,
     message,
+    mirror: mirrorArg,
   })
 }

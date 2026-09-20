@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mapZApiStatus, normalizeContent } from './route'
+import { classifyZApiMessageEvent } from '@/lib/whatsapp/mirror-mode'
 
 describe('mapZApiStatus', () => {
   it('maps SENT to sent', () => {
@@ -97,5 +98,12 @@ describe('normalizeContent', () => {
     })
     expect(res.contentType).toBe('image')
     expect(res.mediaUrl).toBe('https://cdn.z-api.io/sticker.webp')
+  })
+})
+
+describe('webhook route wiring contract', () => {
+  it('uses the shared classifier: fromMe is only ingested in mirror mode', () => {
+    expect(classifyZApiMessageEvent({ fromMe: true }, false)).toBe('skip_outbound_echo')
+    expect(classifyZApiMessageEvent({ fromMe: true }, true)).toBe('ingest_outbound')
   })
 })
