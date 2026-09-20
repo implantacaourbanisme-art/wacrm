@@ -38,3 +38,11 @@ describe('normalizeEvents', () => {
     expect(normalizeEvents([])).toBeNull();
   });
 });
+
+describe('message.sent event', () => {
+  it('is a declared, described event', () => {
+    expect(isWebhookEvent('message.sent')).toBe(true);
+    expect(WEBHOOK_EVENTS).toContain('message.sent');
+    expect(WEBHOOK_EVENT_DESCRIPTIONS['message.sent']).toMatch(/agent/i);
+  });
+});

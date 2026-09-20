@@ -128,6 +128,18 @@ function makeSupabaseMock() {
 
 let supabaseMock = makeSupabaseMock()
 
+// `after()` only works inside a real Next request scope; run it inline here.
+vi.mock('next/server', async (orig) => ({
+  ...(await orig<typeof import('next/server')>()),
+  after: (fn: () => unknown) => {
+    void fn()
+  },
+}))
+vi.mock('@/lib/supabase/admin', () => ({ supabaseAdmin: () => ({}) }))
+vi.mock('@/lib/webhooks/agent-sent', () => ({
+  notifyAgentMessageSent: vi.fn(async () => {}),
+}))
+
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(async () => supabaseMock),
 }))

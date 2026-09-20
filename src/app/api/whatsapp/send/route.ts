@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import {
@@ -6,6 +6,8 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit'
+import { supabaseAdmin } from '@/lib/supabase/admin'
+import { notifyAgentMessageSent } from '@/lib/webhooks/agent-sent'
 import {
   sendMessageToConversation,
   validateSendMessageParams,
@@ -166,6 +168,18 @@ export async function POST(request: Request) {
         interactivePayload: interactive_payload,
         replyToMessageId: reply_to_message_id,
       })
+
+      // A human is on the thread: let subscribers (the n8n bot) know so
+      // they can stop auto-replying. Runs after the response is sent and
+      // uses the service role (webhook endpoints aren't readable by an
+      // 'agent' under RLS). Never throws.
+      after(() =>
+        notifyAgentMessageSent(supabaseAdmin(), accountId, {
+          conversationId: conversationId!,
+          messageId: result.whatsappMessageId,
+          text: typeof content_text === 'string' ? content_text : null,
+        })
+      )
 
       return NextResponse.json({
         success: true,
