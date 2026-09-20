@@ -35,7 +35,12 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const { accountId } = useAuth();
   const [copied, setCopied] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
-  const [documentDigits, setDocumentDigits] = useState<string | null>(null);
+  // Stored together with the contact it belongs to, so a stale value can never
+  // render under another contact's header (derived, not cleared in an effect).
+  const [documentState, setDocumentState] = useState<{
+    contactId: string;
+    digits: string | null;
+  } | null>(null);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
@@ -58,7 +63,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const fetchContactData = useCallback(async () => {
     const seq = ++requestSeq.current;
     // Never keep the previous contact's document while loading.
-    setDocumentDigits(null);
+    setDocumentState(null);
     if (!contact) return;
 
     const supabase = createClient();
@@ -102,11 +107,12 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         }));
       setTags(mapped);
     }
-    setDocumentDigits(
-      documentRes.data
+    setDocumentState({
+      contactId: contact.id,
+      digits: documentRes.data
         ? normalizeDocument((documentRes.data as { value: string | null }).value)
         : null,
-    );
+    });
   }, [contact]);
 
   // Load on contact change. setContactData/setTags run inside async
@@ -245,8 +251,8 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               </button>
             )}
 
-            {documentDigits && (
-              <ContactDocumentRow key={contact.id} digits={documentDigits} />
+            {documentState?.contactId === contact.id && documentState.digits && (
+              <ContactDocumentRow key={contact.id} digits={documentState.digits} />
             )}
           </div>
 

@@ -81,9 +81,9 @@ export function parseSyncBody(body: unknown): ParsedSync {
       for (const [name, value] of Object.entries(rawFields as Record<string, unknown>)) {
         const fieldName = text(name, Number.MAX_SAFE_INTEGER)
         if (!fieldName || fieldName.length > MAX_FIELD_NAME) continue
-        if (fieldName === CPF_CNPJ_FIELD_NAME) {
+        if (fieldName.toLowerCase() === CPF_CNPJ_FIELD_NAME.toLowerCase()) {
           const doc = normalizeDocument(value)
-          if (doc) customFields[fieldName] = doc
+          if (doc) customFields[CPF_CNPJ_FIELD_NAME] = doc
           continue
         }
         const v = text(value)

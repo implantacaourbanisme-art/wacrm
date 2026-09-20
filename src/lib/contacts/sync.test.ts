@@ -122,6 +122,22 @@ describe('parseSyncBody', () => {
       items: [{ index: 0, phone: '5582', name: null, email: null, customFields: {} }],
     })
   })
+  it('treats the CPF/CNPJ field name case-insensitively and emits the canonical name', () => {
+    const r = parseSyncBody({ contacts: [{ phone: '5582', custom_fields: { 'cpf/cnpj': '529.982.247-25' } }] })
+    expect(r).toEqual({
+      ok: true,
+      invalid: [],
+      items: [{ index: 0, phone: '5582', name: null, email: null, customFields: { 'CPF/CNPJ': '52998224725' } }],
+    })
+  })
+  it('drops an invalid document under a differently-cased field name', () => {
+    const r = parseSyncBody({ contacts: [{ phone: '5582', custom_fields: { 'Cpf/Cnpj': 'pendente' } }] })
+    expect(r).toEqual({
+      ok: true,
+      invalid: [],
+      items: [{ index: 0, phone: '5582', name: null, email: null, customFields: {} }],
+    })
+  })
   it('ignores empty custom field values', () => {
     const r = parseSyncBody({ contacts: [{ phone: '5582', custom_fields: { Outro: '  ' } }] })
     expect(r).toEqual({
