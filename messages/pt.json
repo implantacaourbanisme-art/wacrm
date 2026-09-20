@@ -1674,6 +1674,8 @@
       "zapiClientTokenPlaceholder": "Informe o token de segurança da conta",
       "zapiClientTokenHint": "Encontrado em Segurança, no painel da Z-API. Usado em toda chamada à API e para validar o webhook de mensagens recebidas.",
       "zapiTokensRequired": "O token da instância e o token de segurança são obrigatórios na configuração inicial",
+      "zapiSkipWebhooks": "Não registrar webhook (modo espelho)",
+      "zapiSkipWebhooksHint": "Use quando outro sistema (ex.: n8n) já recebe os eventos desta instância e encaminha cópias para cá.",
       "zapiReenterTokens": "Informe novamente os tokens para salvar as alterações",
       "zapiConnected": "Z-API conectada com sucesso",
       "zapiSavedAwaitingScan": "Credenciais salvas. Escaneie o QR Code para concluir a conexão.",

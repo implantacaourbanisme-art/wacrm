@@ -18,6 +18,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { SettingsPanelHead } from './settings-panel-head';
@@ -51,6 +52,7 @@ export function ZApiConfig({ onConnected }: { onConnected?: () => void }) {
   const [showInstanceToken, setShowInstanceToken] = useState(false);
   const [showClientToken, setShowClientToken] = useState(false);
   const [tokenEdited, setTokenEdited] = useState(false);
+  const [skipWebhooks, setSkipWebhooks] = useState(false);
 
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
@@ -171,10 +173,11 @@ export function ZApiConfig({ onConnected }: { onConnected?: () => void }) {
     setSaving(true);
     setSaveError(null);
     try {
-      const payload: Record<string, string> = { instance_id: instanceId.trim() };
+      const payload: Record<string, string | boolean> = { instance_id: instanceId.trim() };
       if (tokenEdited) {
         payload.instance_token = instanceToken.trim();
         payload.client_token = clientToken.trim();
+        if (skipWebhooks) payload.skip_webhook_registration = true;
       } else if (!saved) {
         toast.error(t('zapiTokensRequired'));
         setSaving(false);
@@ -355,6 +358,18 @@ export function ZApiConfig({ onConnected }: { onConnected?: () => void }) {
               </div>
               <p className="text-xs text-muted-foreground">{t('zapiClientTokenHint')}</p>
             </div>
+
+            <label className="flex items-start gap-2 text-sm text-muted-foreground">
+              <Checkbox
+                checked={skipWebhooks}
+                onCheckedChange={(v) => setSkipWebhooks(v === true)}
+                className="mt-0.5"
+              />
+              <span>
+                {t('zapiSkipWebhooks')}
+                <span className="block text-xs">{t('zapiSkipWebhooksHint')}</span>
+              </span>
+            </label>
           </CardContent>
         </Card>
 

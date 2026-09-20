@@ -9,6 +9,7 @@ import {
   configureEveryWebhooks,
   ZApiError,
 } from '@/lib/whatsapp/zapi-api'
+import { wantsSkipWebhookRegistration } from '@/lib/whatsapp/mirror-mode'
 
 /**
  * POST /api/whatsapp/zapi/config
@@ -55,6 +56,7 @@ export async function POST(request: Request) {
     const { accountId, userId, supabase } = await requireRole('admin')
 
     const body = await request.json()
+    const skipWebhooks = wantsSkipWebhookRegistration(body)
     const instanceId = typeof body.instance_id === 'string' ? body.instance_id.trim() : ''
     const instanceToken = typeof body.instance_token === 'string' ? body.instance_token.trim() : ''
     const clientToken = typeof body.client_token === 'string' ? body.client_token.trim() : ''
@@ -102,42 +104,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: message }, { status: 400 })
     }
 
-    // Point both of the instance's webhooks at this deployment — the
-    // route handles both event types at the same URL (dispatched by
-    // the payload's `type` field). Each call is independently
-    // best-effort: saved credentials are still useful even if one
-    // fails (the user can retry by saving again), same philosophy as
-    // Meta's /register failure path. The status-webhook endpoint path
-    // is unconfirmed (see configureMessageStatusWebhook's own doc
-    // comment) — its failure alone shouldn't read as "the connection
-    // is broken," so it's reported separately from the received-
-    // webhook error.
+    // Point both of the instance's webhooks at this deployment — unless
+    // the caller asked to keep the instance's existing webhook (mirror
+    // setup: another system, the n8n bot, owns it and forwards copies
+    // here; re-pointing would silently cut that system off).
     const webhookUrl = `${webhookBaseUrl(request)}/api/whatsapp/zapi/webhook?token=${encodeURIComponent(clientToken)}`
     let webhookError: string | null = null
-    try {
-      await configureEveryWebhooks({ instanceId, instanceToken, clientToken, webhookUrl })
-    } catch {
-      // Fall back to configureReceivedWebhook if update-every-webhooks is unavailable
-      try {
-        await configureReceivedWebhook({ instanceId, instanceToken, clientToken, webhookUrl })
-      } catch (err) {
-        webhookError =
-          err instanceof ZApiError ? err.message : 'Could not configure the Z-API webhook.'
-        console.error('[zapi/config] webhook registration failed:', webhookError)
-      }
-    }
     let statusWebhookError: string | null = null
-    try {
-      await configureMessageStatusWebhook({ instanceId, instanceToken, clientToken, webhookUrl })
-    } catch (err) {
-      statusWebhookError =
-        err instanceof ZApiError
-          ? err.message
-          : 'Could not configure the Z-API message-status webhook.'
-      console.warn(
-        '[zapi/config] status-webhook registration failed (delivery/read receipts will not update):',
-        statusWebhookError,
-      )
+    if (!skipWebhooks) {
+      try {
+        await configureEveryWebhooks({ instanceId, instanceToken, clientToken, webhookUrl })
+      } catch {
+        // Fall back to configureReceivedWebhook if update-every-webhooks is unavailable
+        try {
+          await configureReceivedWebhook({ instanceId, instanceToken, clientToken, webhookUrl })
+        } catch (err) {
+          webhookError =
+            err instanceof ZApiError ? err.message : 'Could not configure the Z-API webhook.'
+          console.error('[zapi/config] webhook registration failed:', webhookError)
+        }
+      }
+      try {
+        await configureMessageStatusWebhook({ instanceId, instanceToken, clientToken, webhookUrl })
+      } catch (err) {
+        statusWebhookError =
+          err instanceof ZApiError
+            ? err.message
+            : 'Could not configure the Z-API message-status webhook.'
+        console.warn(
+          '[zapi/config] status-webhook registration failed (delivery/read receipts will not update):',
+          statusWebhookError,
+        )
+      }
     }
 
     const { data: existing } = await supabase
@@ -186,6 +184,7 @@ export async function POST(request: Request) {
       connected: status.connected,
       webhook_error: webhookError,
       status_webhook_error: statusWebhookError,
+      webhook_skipped: skipWebhooks,
     })
   } catch (err) {
     return toErrorResponse(err)
