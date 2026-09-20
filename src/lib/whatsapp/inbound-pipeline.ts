@@ -84,6 +84,12 @@ export interface IngestInboundArgs {
   /** Exactly one of `reaction` or `message` must be set. */
   reaction?: InboundReactionEvent
   message?: NormalizedInboundMessage
+  /** Mirror mode — the message is a COPY of traffic the n8n bot already
+   *  handles. Persist it (contact, conversation, message) so the Inbox
+   *  shows it, but never run Flows / Automations / AI auto-reply /
+   *  public webhooks. `outbound` records our own (bot / attendant)
+   *  message: sender_type 'bot', status 'sent', no unread bump. */
+  mirror?: { direction: 'inbound' | 'outbound' }
 }
 
 // ============================================================
@@ -404,7 +410,8 @@ async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
  * log a useful error.
  */
 export async function ingestInboundMessage(args: IngestInboundArgs): Promise<void> {
-  const { accountId, configOwnerUserId, identity, reaction, message } = args
+  const { accountId, configOwnerUserId, identity, reaction, message, mirror } = args
+  const isOutbound = mirror?.direction === 'outbound'
 
   const contactOutcome = await findOrCreateContact(accountId, configOwnerUserId, identity)
   if (!contactOutcome) return
@@ -418,7 +425,7 @@ export async function ingestInboundMessage(args: IngestInboundArgs): Promise<voi
   // the reaction short-circuit below — so a conversation first opened
   // by a reaction still fires the event, and a subscriber always sees
   // the thread open before its first message.received.
-  if (convResult.created) {
+  if (convResult.created && !mirror) {
     await dispatchWebhookEvent(supabaseAdmin(), accountId, 'conversation.created', {
       conversation_id: conversation.id,
       contact_id: contactRecord.id,
@@ -469,13 +476,13 @@ export async function ingestInboundMessage(args: IngestInboundArgs): Promise<voi
     .upsert(
       {
         conversation_id: conversation.id,
-        sender_type: 'customer',
+        sender_type: isOutbound ? 'bot' : 'customer',
         content_type: message.contentType,
         content_text: message.contentText,
         media_url: message.mediaUrl,
         media_type: message.mediaType,
         message_id: message.providerMessageId,
-        status: 'delivered',
+        status: isOutbound ? 'sent' : 'delivered',
         created_at: new Date(message.timestampMs).toISOString(),
         reply_to_message_id: replyToInternalId,
         interactive_reply_id: message.interactiveReplyId,
@@ -497,23 +504,42 @@ export async function ingestInboundMessage(args: IngestInboundArgs): Promise<voi
     return
   }
 
-  // Unread bump + last-message summary done DB-side (migration 037's
-  // bump_conversation_on_inbound) rather than a read-modify-write, so
-  // two concurrent inbound messages for the same conversation can't
-  // lose an increment.
-  const { error: convError } = await supabaseAdmin().rpc(
-    'bump_conversation_on_inbound',
-    {
-      p_conversation_id: conversation.id,
-      p_last_message_text: message.contentText || `[${message.rawTypeLabel}]`,
+  if (isOutbound) {
+    // Our own message: keep the thread summary fresh but do NOT count
+    // it as unread.
+    const { error: touchError } = await supabaseAdmin()
+      .from('conversations')
+      .update({
+        last_message_text: message.contentText || `[${message.rawTypeLabel}]`,
+        last_message_at: new Date(message.timestampMs).toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversation.id)
+    if (touchError) {
+      console.error('[inbound-pipeline] Error updating conversation (outbound mirror):', touchError)
     }
-  )
-  if (convError) {
-    console.error('[inbound-pipeline] Error updating conversation:', convError)
+  } else {
+    // Unread bump + last-message summary done DB-side (migration 037's
+    // bump_conversation_on_inbound) rather than a read-modify-write, so
+    // two concurrent inbound messages for the same conversation can't
+    // lose an increment.
+    const { error: convError } = await supabaseAdmin().rpc(
+      'bump_conversation_on_inbound',
+      {
+        p_conversation_id: conversation.id,
+        p_last_message_text: message.contentText || `[${message.rawTypeLabel}]`,
+      }
+    )
+    if (convError) {
+      console.error('[inbound-pipeline] Error updating conversation:', convError)
+    }
+
+    // A customer writing again re-opens the thread (issue #409).
+    await reopenClosedConversation(supabaseAdmin(), conversation)
   }
 
-  // A customer writing again re-opens the thread (issue #409).
-  await reopenClosedConversation(supabaseAdmin(), conversation)
+  // Mirror mode stops here: persisted for the Inbox, nothing dispatched.
+  if (mirror) return
 
   await flagBroadcastReplyIfAny(accountId, contactRecord.id)
 
