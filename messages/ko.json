@@ -302,6 +302,10 @@
       "deals": "딜",
       "noTags": "태그 없음",
       "noDeals": "딜 없음",
+      "revealDocument": "CPF/CNPJ 표시",
+      "hideDocument": "CPF/CNPJ 숨기기",
+      "copyDocument": "CPF/CNPJ 복사",
+      "copyEmail": "이메일 복사",
       "addNotePlaceholder": "메모 추가..."
     },
     "aiBanner": {

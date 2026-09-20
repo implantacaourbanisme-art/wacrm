@@ -21,6 +21,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
+import { ContactDocumentRow } from "./contact-document-row";
+import { CPF_CNPJ_FIELD_NAME, normalizeDocument } from "@/lib/contacts/document";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -32,6 +34,8 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
   const { accountId } = useAuth();
   const [copied, setCopied] = useState(false);
+  const [copiedEmail, setCopiedEmail] = useState(false);
+  const [documentDigits, setDocumentDigits] = useState<string | null>(null);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
@@ -44,7 +48,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     const supabase = createClient();
 
     // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes] = await Promise.all([
+    const [dealsRes, notesRes, tagsRes, documentRes] = await Promise.all([
       supabase
         .from("deals")
         .select("*, stage:pipeline_stages(*)")
@@ -59,6 +63,12 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .from("contact_tags")
         .select("id, tag_id, tags(*)")
         .eq("contact_id", contact.id),
+      supabase
+        .from("contact_custom_values")
+        .select("value, custom_fields!inner(field_name)")
+        .eq("contact_id", contact.id)
+        .eq("custom_fields.field_name", CPF_CNPJ_FIELD_NAME)
+        .maybeSingle(),
     ]);
 
     if (dealsRes.data) setDeals(dealsRes.data);
@@ -72,6 +82,11 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         }));
       setTags(mapped);
     }
+    setDocumentDigits(
+      documentRes.data
+        ? normalizeDocument((documentRes.data as { value: string | null }).value)
+        : null,
+    );
   }, [contact]);
 
   // Load on contact change. setContactData/setTags run inside async
@@ -92,6 +107,13 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     // Dep is the whole `contact` object (not `contact?.phone`) so the
     // React Compiler's inference agrees with the manual dep list —
     // fixes the `preserve-manual-memoization` lint error.
+  }, [contact]);
+
+  const handleCopyEmail = useCallback(async () => {
+    if (!contact?.email) return;
+    await navigator.clipboard.writeText(contact.email);
+    setCopiedEmail(true);
+    setTimeout(() => setCopiedEmail(false), 2000);
   }, [contact]);
 
   const handleAddNote = useCallback(async () => {
@@ -177,10 +199,23 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             </button>
 
             {contact.email && (
-              <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">
+              <button
+                onClick={handleCopyEmail}
+                aria-label={tSidebar("copyEmail")}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+              >
                 <Mail className="h-4 w-4 text-muted-foreground" />
-                <span className="truncate">{contact.email}</span>
-              </div>
+                <span className="flex-1 truncate text-left">{contact.email}</span>
+                {copiedEmail ? (
+                  <Check className="h-3 w-3 text-primary" />
+                ) : (
+                  <Copy className="h-3 w-3 text-muted-foreground" />
+                )}
+              </button>
+            )}
+
+            {documentDigits && (
+              <ContactDocumentRow key={contact.id} digits={documentDigits} />
             )}
           </div>
 

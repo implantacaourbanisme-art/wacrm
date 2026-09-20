@@ -302,6 +302,10 @@
       "deals": "Deals",
       "noTags": "No tags",
       "noDeals": "No deals",
+      "revealDocument": "Show CPF/CNPJ",
+      "hideDocument": "Hide CPF/CNPJ",
+      "copyDocument": "Copy CPF/CNPJ",
+      "copyEmail": "Copy email",
       "addNotePlaceholder": "Add a note..."
     },
     "aiBanner": {

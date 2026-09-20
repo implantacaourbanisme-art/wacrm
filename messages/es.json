@@ -302,6 +302,10 @@
       "deals": "Negocios",
       "noTags": "Sin etiquetas",
       "noDeals": "Sin negocios",
+      "revealDocument": "Mostrar CPF/CNPJ",
+      "hideDocument": "Ocultar CPF/CNPJ",
+      "copyDocument": "Copiar CPF/CNPJ",
+      "copyEmail": "Copiar correo",
       "addNotePlaceholder": "Agregar una nota..."
     },
     "aiBanner": {
