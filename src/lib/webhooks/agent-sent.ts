@@ -16,7 +16,7 @@ export function phoneDigits(phone: string | null | undefined): string {
 export async function notifyAgentMessageSent(
   db: SupabaseClient,
   accountId: string,
-  args: { conversationId: string; messageId: string; text: string | null }
+  args: { conversationId: string; messageId: string; whatsappMessageId: string; text: string | null }
 ): Promise<void> {
   try {
     const { data } = await db
@@ -38,6 +38,7 @@ export async function notifyAgentMessageSent(
       contact_id: (data as { contact_id: string }).contact_id,
       phone,
       message_id: args.messageId,
+      whatsapp_message_id: args.whatsappMessageId,
       text: args.text,
     })
   } catch (err) {

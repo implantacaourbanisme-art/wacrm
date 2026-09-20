@@ -172,6 +172,7 @@ vi.mock('@/lib/whatsapp/meta-api', () => ({
   sendMediaMessage: vi.fn(),
 }))
 
+import { notifyAgentMessageSent } from '@/lib/webhooks/agent-sent'
 import { POST } from './route'
 
 function postContactTemplate(overrides: Record<string, unknown> = {}) {
@@ -240,6 +241,14 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
       content_type: 'template',
       template_name: 'order_update',
       sender_type: 'agent',
+    })
+
+    // Subscribers (the n8n bot) are told a human agent sent a message.
+    expect(notifyAgentMessageSent).toHaveBeenCalledWith(expect.anything(), 'acct-1', {
+      conversationId: 'conv-new',
+      messageId: json.message_id,
+      whatsappMessageId: 'wamid-1',
+      text: null,
     })
   })
 

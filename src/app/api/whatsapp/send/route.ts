@@ -176,7 +176,8 @@ export async function POST(request: Request) {
       after(() =>
         notifyAgentMessageSent(supabaseAdmin(), accountId, {
           conversationId: conversationId!,
-          messageId: result.whatsappMessageId,
+          messageId: result.messageId,
+          whatsappMessageId: result.whatsappMessageId,
           text: typeof content_text === 'string' ? content_text : null,
         })
       )

@@ -48,6 +48,7 @@ it. Grant the minimum.
 | `contacts:read`      | List and read contacts                   |
 | `contacts:write`     | Create and update contacts               |
 | `conversations:read` | List and read conversations              |
+| `conversations:write`| Hand a conversation off to a human agent |
 | `broadcasts:send`    | Launch broadcast campaigns               |
 | `webhooks:manage`    | Register and manage outbound webhooks    |
 
@@ -219,6 +220,45 @@ Paginated. Each message includes its `direction` (`inbound` /
 `content_*`. The conversation is verified to belong to your account
 first (`404` otherwise).
 
+### `POST /api/v1/handoffs`
+
+Hand a customer conversation to a human (used by the n8n bot's
+"Transbordo"). Scope: `conversations:write`. Finds or creates the
+contact + conversation for `phone`, assigns it to the account member with
+`assign_to_email` (if any), reopens the thread and stores `summary` as a
+contact note.
+
+```json
+{
+  "phone": "+558296004382",
+  "name": "Jane Doe",
+  "summary": "Customer wants a copy of the invoice.",
+  "assign_to_email": "agent@example.com"
+}
+```
+
+`phone` and `summary` (max 10000 chars) are required; `name` and
+`assign_to_email` are optional (`assign_to_email` must not contain `*`).
+If no account member has that e-mail, the conversation is left
+**unassigned** (the request still succeeds).
+
+Response (201):
+
+```json
+{
+  "data": {
+    "conversation_id": "…",
+    "contact_id": "…",
+    "contact_created": false,
+    "assigned_to": { "user_id": "…", "email": "agent@example.com" },
+    "note_id": "…"
+  }
+}
+```
+
+`assigned_to` is `null` when unassigned. Errors: `400` (invalid body),
+`401` (missing/invalid key), `403` (key lacks `conversations:write`).
+
 ### `POST /api/v1/broadcasts`
 
 Launch a template broadcast to a list of recipients. Scope:
@@ -294,6 +334,11 @@ things happen in your account. **Migration required:** apply
 | `message.received`       | An inbound message arrives from a contact         |
 | `message.status_updated` | A message you sent changed delivery status        |
 | `conversation.created`   | A new conversation is opened for a contact        |
+| `message.sent`           | A human agent sent a message from the Inbox       |
+
+`message.sent` `data` fields: `conversation_id`, `contact_id`, `phone`
+(digits only), `message_id` (CRM message id), `whatsapp_message_id`,
+`text`.
 
 ### Managing endpoints
 

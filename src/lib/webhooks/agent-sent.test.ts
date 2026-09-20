@@ -26,7 +26,7 @@ const db: any = {
     return proxy
   },
 }
-const args = { conversationId: 'conv1', messageId: 'm1', text: 'Olá, sou o Alisson' }
+const args = { conversationId: 'conv1', messageId: 'm1', whatsappMessageId: 'wamid1', text: 'Olá, sou o Alisson' }
 
 beforeEach(() => {
   vi.mocked(dispatchWebhookEvent).mockClear()
@@ -49,6 +49,7 @@ describe('notifyAgentMessageSent', () => {
       contact_id: 'c1',
       phone: '5582996004382',
       message_id: 'm1',
+      whatsapp_message_id: 'wamid1',
       text: 'Olá, sou o Alisson',
     })
   })

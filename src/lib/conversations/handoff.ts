@@ -53,6 +53,9 @@ export function parseHandoffBody(body: unknown): ParsedHandoff {
     typeof b.assign_to_email === 'string' && b.assign_to_email.trim()
       ? b.assign_to_email.trim().toLowerCase()
       : null
+  if (assignToEmail?.includes('*')) {
+    return { ok: false, message: "'assign_to_email' must not contain '*'" }
+  }
   return { ok: true, value: { phone, name, summary, assignToEmail } }
 }
 
@@ -112,6 +115,7 @@ export async function performHandoff(
     .from('contact_notes')
     .insert({
       contact_id: resolved.contactId,
+      account_id: accountId,
       user_id: authorId,
       note_text: `🚨 Transbordo — resumo do bot\n\n${input.summary}`,
     })

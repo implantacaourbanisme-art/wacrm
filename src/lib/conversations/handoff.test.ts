@@ -111,6 +111,15 @@ describe('parseHandoffBody', () => {
   })
 })
 
+describe('parseHandoffBody wildcard guard', () => {
+  it("rejects an assign_to_email containing '*'", () => {
+    expect(parseHandoffBody({ phone: '5582', summary: 'x', assign_to_email: 'a*@b.com' })).toEqual({
+      ok: false,
+      message: "'assign_to_email' must not contain '*'",
+    })
+  })
+})
+
 describe('performHandoff', () => {
   it('assigns to the member found by email, reopens the thread and writes the note as that member', async () => {
     h.profile = { user_id: 'user-alisson', email: 'joalyssoncleverton96@icloud.com' }
@@ -125,8 +134,12 @@ describe('performHandoff', () => {
       agentId: 'user-alisson',
     })
     expect(h.convUpdates[0]).toMatchObject({ status: 'open' })
-    expect(h.notes[0]).toMatchObject({ contact_id: 'c1', user_id: 'user-alisson' })
-    expect(String(h.notes[0].note_text)).toContain('Cliente quer 2ª via do boleto.')
+    expect(h.notes[0]).toEqual({
+      contact_id: 'c1',
+      account_id: 'acc1',
+      user_id: 'user-alisson',
+      note_text: expect.stringContaining('Cliente quer 2ª via do boleto.'),
+    })
     expect(r).toEqual({
       conversationId: 'conv1',
       contactId: 'c1',
@@ -140,7 +153,12 @@ describe('performHandoff', () => {
     const r = await performHandoff(makeDb(), 'acc1', input)
     expect(assignConversation).not.toHaveBeenCalled()
     expect(r.assignedTo).toBeNull()
-    expect(h.notes[0]).toMatchObject({ user_id: 'owner1' })
+    expect(h.notes[0]).toEqual({
+      contact_id: 'c1',
+      account_id: 'acc1',
+      user_id: 'owner1',
+      note_text: expect.stringContaining('Cliente quer 2ª via do boleto.'),
+    })
   })
 
   it('does not look anyone up when no email is given', async () => {
