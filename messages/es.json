@@ -539,7 +539,7 @@
       "newPipeline": "Nuevo pipeline",
       "pipelineName": "Nombre del pipeline",
       "pipelineNamePlaceholder": "p. ej. Ventas corporativas",
-      "defaultStagesDesc": "Las etapas predeterminadas (Nuevo lead → Ganado) se crearán automáticamente.",
+      "defaultStagesDesc": "Las etapas predeterminadas (Contacto inicial → Contrato) se crearán automáticamente.",
       "cancel": "Cancelar",
       "creating": "Creando...",
       "createPipelineBtn": "Crear pipeline",

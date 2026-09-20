@@ -12,6 +12,10 @@ const h = vi.hoisted(() => ({
   notes: [] as Record<string, unknown>[],
   convUpdates: [] as Record<string, unknown>[],
   ilikeArgs: [] as unknown[][],
+  account: null as null | { default_currency: string | null },
+  dealInsertError: false,
+  existingDealSeq: null as null | ({ id: string } | null)[],
+  filters: [] as { table: string; method: string; args: unknown[] }[],
 }))
 
 vi.mock('@/lib/whatsapp/resolve-conversation', () => ({
@@ -41,11 +45,16 @@ function makeDb(): any {
       const result = () => {
         if (table === 'pipelines') return { data: h.pipeline, error: null }
         if (table === 'pipeline_stages') return { data: h.stage, error: null }
+        if (table === 'accounts') return { data: h.account, error: null }
         if (table === 'deals' && op === 'insert') {
+          if (h.dealInsertError) return { data: null, error: { message: 'duplicate' } }
           h.deals.push(payload as Record<string, unknown>)
           return { data: { id: 'deal1' }, error: null }
         }
-        if (table === 'deals') return { data: h.existingDeal, error: null }
+        if (table === 'deals') {
+          if (h.existingDealSeq) return { data: h.existingDealSeq.shift() ?? null, error: null }
+          return { data: h.existingDeal, error: null }
+        }
         if (table === 'profiles') return { data: h.profile, error: null }
         if (table === 'conversations' && op === 'update') {
           h.convUpdates.push(payload as Record<string, unknown>)
@@ -70,6 +79,7 @@ function makeDb(): any {
                 payload = args[0]
               }
               if (prop === 'ilike') h.ilikeArgs.push(args)
+              if (['eq', 'order', 'limit'].includes(prop)) h.filters.push({ table, method: prop, args })
               return proxy
             }
           },
@@ -99,6 +109,10 @@ beforeEach(() => {
   h.existingDeal = null
   h.deals.length = 0
   h.tablesTouched.length = 0
+  h.account = null
+  h.dealInsertError = false
+  h.existingDealSeq = null
+  h.filters.length = 0
 })
 
 describe('parseHandoffBody', () => {
@@ -229,7 +243,7 @@ describe('performHandoff', () => {
       h.stage = { id: 'stage1' }
     })
 
-    it('inserts a deal with the full payload in the first pipeline/stage', async () => {
+    it('inserts a deal with the full payload (BRL fallback when the account has no currency)', async () => {
       h.profile = { id: 'prof-alisson', user_id: 'user-alisson', email: 'joalyssoncleverton96@icloud.com' }
       const r = await performHandoff(makeDb(), 'acc1', dealInput)
       expect(h.deals).toHaveLength(1)
@@ -250,6 +264,43 @@ describe('performHandoff', () => {
       expect(r.deal).toEqual({ id: 'deal1', created: true })
     })
 
+    it('uses the account default currency when set', async () => {
+      h.account = { default_currency: 'USD' }
+      await performHandoff(makeDb(), 'acc1', dealInput)
+      expect(h.deals[0]).toMatchObject({ currency: 'USD' })
+      expect(h.filters).toContainEqual({ table: 'accounts', method: 'eq', args: ['id', 'acc1'] })
+    })
+
+    it('picks the oldest pipeline and its lowest-position stage', async () => {
+      await performHandoff(makeDb(), 'acc1', dealInput)
+      const of = (t: string, m: string) => h.filters.filter((f) => f.table === t && f.method === m).map((f) => f.args)
+      expect(of('pipelines', 'order')).toEqual([['created_at', { ascending: true }]])
+      expect(of('pipeline_stages', 'order')).toEqual([['position', { ascending: true }]])
+      expect(of('pipeline_stages', 'eq')).toContainEqual(['pipeline_id', 'pipe1'])
+    })
+
+    it('dedupe select is scoped to open deals of this contact/account/pipeline', async () => {
+      await performHandoff(makeDb(), 'acc1', dealInput)
+      const eqs = h.filters.filter((f) => f.table === 'deals' && f.method === 'eq').map((f) => f.args)
+      expect(eqs).toEqual(
+        expect.arrayContaining([['status', 'open'], ['contact_id', 'c1'], ['account_id', 'acc1'], ['pipeline_id', 'pipe1']])
+      )
+    })
+
+    it('returns the existing deal when the insert loses a race', async () => {
+      h.existingDealSeq = [null, { id: 'deal-raced' }]
+      h.dealInsertError = true
+      const r = await performHandoff(makeDb(), 'acc1', dealInput)
+      expect(r.deal).toEqual({ id: 'deal-raced', created: false })
+    })
+
+    it('returns null when the insert fails and there is still no open deal', async () => {
+      h.existingDealSeq = [null, null]
+      h.dealInsertError = true
+      const r = await performHandoff(makeDb(), 'acc1', dealInput)
+      expect(r.deal).toBeNull()
+    })
+
     it('uses deal_title when given and the phone when there is no name', async () => {
       await performHandoff(makeDb(), 'acc1', { ...dealInput, dealTitle: 'Custom' })
       expect(h.deals[0]).toMatchObject({ title: 'Custom' })
@@ -262,7 +313,7 @@ describe('performHandoff', () => {
       expect(h.deals[0]).toMatchObject({ assigned_to: null, user_id: 'owner1' })
     })
 
-    it('reuses an existing open deal without inserting', async () => {
+    it('reuses an existing open deal without inserting a new one', async () => {
       h.existingDeal = { id: 'deal-old' }
       const r = await performHandoff(makeDb(), 'acc1', dealInput)
       expect(h.deals).toHaveLength(0)

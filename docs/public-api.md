@@ -286,11 +286,14 @@ If no account member has that e-mail, the conversation is left
 Optional deal: send `create_deal: true` (only the boolean `true` enables
 it) to also open a sales deal for the contact. `deal_title` (optional,
 trimmed, max 200 chars) sets its title; the default is
-`Lead — <name or phone>`. The deal lands in the account's **first
-pipeline, first stage**, with currency `BRL`, value `0`, status `open`,
+`Lead — <name or phone>`. The deal lands in the account's **oldest
+pipeline** (the one the board opens by default), **first stage**, in the
+**account's default currency**, value `0`, status `open`,
 the handoff `summary` as its notes, linked to the conversation and
 assigned to the same member. **Dedupe:** if the contact already has an
-open deal in that pipeline, it is reused and no new deal is created. A
+open deal in that pipeline, it is reused and returned untouched (it is not moved back to the first
+stage and its notes are not updated; the new summary only goes to the
+contact note) and no new deal is created. A
 missing pipeline/stage or a database error never fails the handoff —
 `deal` is simply `null`.
 

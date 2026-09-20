@@ -539,7 +539,7 @@
       "newPipeline": "새 파이프라인",
       "pipelineName": "파이프라인 이름",
       "pipelineNamePlaceholder": "예: 기업 영업",
-      "defaultStagesDesc": "기본 단계(신규 리드 → 성사)가 자동으로 생성됩니다.",
+      "defaultStagesDesc": "기본 단계(초기 연락 → 계약)가 자동으로 생성됩니다.",
       "cancel": "취소",
       "creating": "만드는 중...",
       "createPipelineBtn": "파이프라인 만들기",

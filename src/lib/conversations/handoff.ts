@@ -199,17 +199,26 @@ async function ensureDeal(
       return null
     }
 
-    const { data: existing, error: existingError } = await db
-      .from('deals')
-      .select('id')
-      .eq('account_id', accountId)
-      .eq('contact_id', ctx.contactId)
-      .eq('pipeline_id', pipeline.id)
-      .eq('status', 'open')
-      .limit(1)
-      .maybeSingle()
+    const findOpenDeal = () =>
+      db
+        .from('deals')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('contact_id', ctx.contactId)
+        .eq('pipeline_id', pipeline.id)
+        .eq('status', 'open')
+        .limit(1)
+        .maybeSingle()
+    const { data: existing, error: existingError } = await findOpenDeal()
     if (existingError) throw new Error(existingError.message)
     if (existing?.id) return { id: existing.id as string, created: false }
+
+    const { data: acct } = await db
+      .from('accounts')
+      .select('default_currency')
+      .eq('id', accountId)
+      .maybeSingle()
+    const currency = (acct?.default_currency as string | null | undefined) ?? 'BRL'
 
     const { data: deal, error: dealError } = await db
       .from('deals')
@@ -222,14 +231,19 @@ async function ensureDeal(
         conversation_id: ctx.conversationId,
         title: ctx.title,
         value: 0,
-        currency: 'BRL',
+        currency,
         status: 'open',
         assigned_to: ctx.assignedProfileId,
         notes: ctx.notes,
       })
       .select('id')
       .single()
-    if (dealError || !deal?.id) throw new Error(dealError?.message ?? 'no row returned')
+    if (dealError || !deal?.id) {
+      // Possibly lost a race with a concurrent handoff: reuse the open deal if one exists now.
+      const { data: raced } = await findOpenDeal()
+      if (raced?.id) return { id: raced.id as string, created: false }
+      throw new Error(dealError?.message ?? 'no row returned')
+    }
     return { id: deal.id as string, created: true }
   } catch (err) {
     console.error('[handoff] deal creation failed:', err instanceof Error ? err.message : err)
