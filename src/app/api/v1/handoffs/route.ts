@@ -3,9 +3,11 @@
 // (scope: conversations:write). Used by the n8n bot's Transbordo.
 //
 // Body: { "phone": "+558296004382", "name": "Ana", "summary": "…",
-//         "assign_to_email": "agent@example.com" }
+//         "assign_to_email": "agent@example.com",
+//         "create_deal": true, "deal_title": "Lead — Ana" }
 // Response (201): { "data": { "conversation_id", "contact_id",
-//   "contact_created", "assigned_to": {user_id,email}|null, "note_id" } }
+//   "contact_created", "assigned_to": {user_id,email}|null, "note_id",
+//   "deal": {id,created}|null } }
 // ============================================================
 
 import { requireApiKey } from '@/lib/auth/api-context';
@@ -34,6 +36,7 @@ export async function POST(request: Request) {
           ? { user_id: result.assignedTo.userId, email: result.assignedTo.email }
           : null,
         note_id: result.noteId,
+        deal: result.deal ? { id: result.deal.id, created: result.deal.created } : null,
       },
       201
     );

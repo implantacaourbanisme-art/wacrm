@@ -272,7 +272,9 @@ contact note.
   "phone": "+558296004382",
   "name": "Jane Doe",
   "summary": "Customer wants a copy of the invoice.",
-  "assign_to_email": "agent@example.com"
+  "assign_to_email": "agent@example.com",
+  "create_deal": true,
+  "deal_title": "Lead — Jane Doe"
 }
 ```
 
@@ -280,6 +282,17 @@ contact note.
 `assign_to_email` are optional (`assign_to_email` must not contain `*`).
 If no account member has that e-mail, the conversation is left
 **unassigned** (the request still succeeds).
+
+Optional deal: send `create_deal: true` (only the boolean `true` enables
+it) to also open a sales deal for the contact. `deal_title` (optional,
+trimmed, max 200 chars) sets its title; the default is
+`Lead — <name or phone>`. The deal lands in the account's **first
+pipeline, first stage**, with currency `BRL`, value `0`, status `open`,
+the handoff `summary` as its notes, linked to the conversation and
+assigned to the same member. **Dedupe:** if the contact already has an
+open deal in that pipeline, it is reused and no new deal is created. A
+missing pipeline/stage or a database error never fails the handoff —
+`deal` is simply `null`.
 
 Response (201):
 
@@ -290,12 +303,15 @@ Response (201):
     "contact_id": "…",
     "contact_created": false,
     "assigned_to": { "user_id": "…", "email": "agent@example.com" },
-    "note_id": "…"
+    "note_id": "…",
+    "deal": { "id": "…", "created": true }
   }
 }
 ```
 
-`assigned_to` is `null` when unassigned. Errors: `400` (invalid body),
+`assigned_to` is `null` when unassigned. `deal` is `null` when
+`create_deal` was not requested or no deal could be created; otherwise
+`created` is `false` when an existing open deal was reused. Errors: `400` (invalid body),
 `401` (missing/invalid key), `403` (key lacks `conversations:write`).
 
 ### `POST /api/v1/broadcasts`
