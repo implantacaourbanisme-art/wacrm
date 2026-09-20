@@ -14,6 +14,7 @@ import { resolveAuditUserId } from '@/lib/api/v1/contacts'
 
 export const MAX_HANDOFF_SUMMARY_CHARS = 10000
 export const MAX_DEAL_TITLE_CHARS = 200
+export const MAX_DEAL_PIPELINE_CHARS = 80
 
 export interface HandoffInput {
   phone: string
@@ -22,6 +23,7 @@ export interface HandoffInput {
   assignToEmail: string | null
   createDeal: boolean
   dealTitle: string | null
+  dealPipeline: string | null
 }
 
 export type ParsedHandoff =
@@ -65,7 +67,18 @@ export function parseHandoffBody(body: unknown): ParsedHandoff {
     typeof b.deal_title === 'string' && b.deal_title.trim()
       ? b.deal_title.trim().slice(0, MAX_DEAL_TITLE_CHARS)
       : null
-  return { ok: true, value: { phone, name, summary, assignToEmail, createDeal, dealTitle } }
+  const dealPipeline =
+    typeof b.deal_pipeline === 'string' && b.deal_pipeline.trim() ? b.deal_pipeline.trim() : null
+  if (dealPipeline && dealPipeline.length > MAX_DEAL_PIPELINE_CHARS) {
+    return {
+      ok: false,
+      message: `'deal_pipeline' must be at most ${MAX_DEAL_PIPELINE_CHARS} characters`,
+    }
+  }
+  return {
+    ok: true,
+    value: { phone, name, summary, assignToEmail, createDeal, dealTitle, dealPipeline },
+  }
 }
 
 /** Escape LIKE wildcards so an e-mail is matched literally (case-insensitively). */
@@ -143,6 +156,7 @@ export async function performHandoff(
         assignedProfileId,
         title: input.dealTitle ?? `Lead — ${input.name ?? input.phone}`,
         notes: input.summary,
+        pipelineName: input.dealPipeline,
       })
     : null
 
@@ -158,7 +172,7 @@ export async function performHandoff(
 
 /**
  * Opens (or reuses) a sales deal for the contact in the account's first
- * pipeline / first stage. Never throws: any failure yields null so the
+ * pipeline (or the one named `pipelineName`, no fallback) / first stage. Never throws: any failure yields null so the
  * handoff itself still succeeds.
  */
 async function ensureDeal(
@@ -171,19 +185,27 @@ async function ensureDeal(
     assignedProfileId: string | null
     title: string
     notes: string
+    pipelineName: string | null
   }
 ): Promise<{ id: string; created: boolean } | null> {
   try {
-    const { data: pipeline, error: pipelineError } = await db
-      .from('pipelines')
-      .select('id')
-      .eq('account_id', accountId)
+    if (ctx.pipelineName?.includes('*')) {
+      console.warn("[handoff] deal_pipeline contains '*' — skipping deal creation")
+      return null
+    }
+    let pipelineQuery = db.from('pipelines').select('id').eq('account_id', accountId)
+    if (ctx.pipelineName) pipelineQuery = pipelineQuery.ilike('name', escapeLike(ctx.pipelineName))
+    const { data: pipeline, error: pipelineError } = await pipelineQuery
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle()
     if (pipelineError) throw new Error(pipelineError.message)
     if (!pipeline?.id) {
-      console.warn('[handoff] no pipeline in account — skipping deal creation')
+      console.warn(
+        ctx.pipelineName
+          ? `[handoff] no pipeline named "${ctx.pipelineName}" — skipping deal creation`
+          : '[handoff] no pipeline in account — skipping deal creation'
+      )
       return null
     }
     const { data: stage, error: stageError } = await db

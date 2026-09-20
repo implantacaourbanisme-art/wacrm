@@ -79,7 +79,7 @@ function makeDb(): any {
                 payload = args[0]
               }
               if (prop === 'ilike') h.ilikeArgs.push(args)
-              if (['eq', 'order', 'limit'].includes(prop)) h.filters.push({ table, method: prop, args })
+              if (['eq', 'order', 'limit', 'ilike'].includes(prop)) h.filters.push({ table, method: prop, args })
               return proxy
             }
           },
@@ -97,6 +97,7 @@ const input = {
   assignToEmail: 'joalyssoncleverton96@icloud.com',
   createDeal: false,
   dealTitle: null,
+  dealPipeline: null as string | null,
 }
 
 beforeEach(() => {
@@ -125,14 +126,14 @@ describe('parseHandoffBody', () => {
     })
     expect(r).toEqual({
       ok: true,
-      value: { phone: '+558296004382', name: 'Ana', summary: 'resumo', assignToEmail: 'a@b.com', createDeal: false, dealTitle: null },
+      value: { phone: '+558296004382', name: 'Ana', summary: 'resumo', assignToEmail: 'a@b.com', createDeal: false, dealTitle: null, dealPipeline: null },
     })
   })
   it('treats name and email as optional', () => {
     const r = parseHandoffBody({ phone: '5582', summary: 'x' })
     expect(r).toEqual({
       ok: true,
-      value: { phone: '5582', name: null, summary: 'x', assignToEmail: null, createDeal: false, dealTitle: null },
+      value: { phone: '5582', name: null, summary: 'x', assignToEmail: null, createDeal: false, dealTitle: null, dealPipeline: null },
     })
   })
   it('rejects a non-object body, a missing phone, a missing summary and an oversized summary', () => {
@@ -162,6 +163,31 @@ describe('parseHandoffBody deal fields', () => {
     expect(r.ok && r.value.dealTitle).toHaveLength(200)
     const b = parseHandoffBody({ ...base, deal_title: '   ' })
     expect(b).toMatchObject({ ok: true, value: { dealTitle: null } })
+  })
+})
+
+describe('parseHandoffBody deal_pipeline', () => {
+  const base = { phone: '5582', summary: 'x' }
+  it('trims the name', () => {
+    expect(parseHandoffBody({ ...base, deal_pipeline: '  Financeiro ' })).toMatchObject({
+      ok: true,
+      value: { dealPipeline: 'Financeiro' },
+    })
+  })
+  it('missing, blank or non-string becomes null', () => {
+    for (const v of [undefined, '', '   ', 5, null]) {
+      expect(parseHandoffBody({ ...base, deal_pipeline: v })).toMatchObject({
+        ok: true,
+        value: { dealPipeline: null },
+      })
+    }
+  })
+  it('rejects more than 80 characters', () => {
+    expect(parseHandoffBody({ ...base, deal_pipeline: 'x'.repeat(81) })).toEqual({
+      ok: false,
+      message: "'deal_pipeline' must be at most 80 characters",
+    })
+    expect(parseHandoffBody({ ...base, deal_pipeline: 'x'.repeat(80) }).ok).toBe(true)
   })
 })
 
@@ -326,6 +352,56 @@ describe('performHandoff', () => {
       expect(r.deal).toBeNull()
       expect(r.noteId).toBe('note1')
       expect(h.deals).toHaveLength(0)
+    })
+
+    describe('deal_pipeline by name', () => {
+      const of = (t: string, m: string) => h.filters.filter((f) => f.table === t && f.method === m).map((f) => f.args)
+      beforeEach(() => {
+        h.pipeline = { id: 'pipe-fin' }
+        h.stage = { id: 'stage-fin' }
+      })
+
+      it('looks the pipeline up by name (ilike, account-scoped) and inserts into it', async () => {
+        const r = await performHandoff(makeDb(), 'acc1', { ...dealInput, dealPipeline: 'Financeiro' })
+        expect(of('pipelines', 'ilike')).toEqual([['name', 'Financeiro']])
+        expect(of('pipelines', 'eq')).toContainEqual(['account_id', 'acc1'])
+        expect(of('pipelines', 'order')).toEqual([['created_at', { ascending: true }]])
+        expect(of('pipeline_stages', 'eq')).toContainEqual(['pipeline_id', 'pipe-fin'])
+        expect(of('pipeline_stages', 'order')).toEqual([['position', { ascending: true }]])
+        expect(h.deals[0]).toMatchObject({ pipeline_id: 'pipe-fin', stage_id: 'stage-fin' })
+        expect(r.deal).toEqual({ id: 'deal1', created: true })
+      })
+
+      it('returns deal null without inserting when no pipeline has that name (no fallback)', async () => {
+        h.pipeline = null
+        const r = await performHandoff(makeDb(), 'acc1', { ...dealInput, dealPipeline: 'Inexistente' })
+        expect(r.deal).toBeNull()
+        expect(r.noteId).toBe('note1')
+        expect(h.deals).toHaveLength(0)
+        expect(h.tablesTouched).not.toContain('pipeline_stages')
+      })
+
+      it('escapes LIKE wildcards in the name', async () => {
+        await performHandoff(makeDb(), 'acc1', { ...dealInput, dealPipeline: 'a_b%' })
+        expect(of('pipelines', 'ilike')).toEqual([['name', 'a\\_b\\%']])
+      })
+
+      it("skips a name containing '*' without querying pipelines", async () => {
+        const r = await performHandoff(makeDb(), 'acc1', { ...dealInput, dealPipeline: 'Fin*' })
+        expect(r.deal).toBeNull()
+        expect(h.tablesTouched).not.toContain('pipelines')
+        expect(h.deals).toHaveLength(0)
+      })
+
+      it('scopes the dedupe to the selected pipeline', async () => {
+        await performHandoff(makeDb(), 'acc1', { ...dealInput, dealPipeline: 'Financeiro' })
+        expect(of('deals', 'eq')).toContainEqual(['pipeline_id', 'pipe-fin'])
+      })
+
+      it('keeps the oldest-pipeline behaviour when dealPipeline is null', async () => {
+        await performHandoff(makeDb(), 'acc1', { ...dealInput, dealPipeline: null })
+        expect(of('pipelines', 'ilike')).toEqual([])
+      })
     })
 
     it('does not touch pipelines/deals when createDeal is false', async () => {

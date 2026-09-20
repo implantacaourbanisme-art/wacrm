@@ -4,7 +4,8 @@
 //
 // Body: { "phone": "+558296004382", "name": "Ana", "summary": "…",
 //         "assign_to_email": "agent@example.com",
-//         "create_deal": true, "deal_title": "Lead — Ana" }
+//         "create_deal": true, "deal_title": "Lead — Ana",
+//         "deal_pipeline": "Financeiro" }
 // Response (201): { "data": { "conversation_id", "contact_id",
 //   "contact_created", "assigned_to": {user_id,email}|null, "note_id",
 //   "deal": {id,created}|null } }

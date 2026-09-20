@@ -274,7 +274,8 @@ contact note.
   "summary": "Customer wants a copy of the invoice.",
   "assign_to_email": "agent@example.com",
   "create_deal": true,
-  "deal_title": "Lead — Jane Doe"
+  "deal_title": "Lead — Jane Doe",
+  "deal_pipeline": "Financeiro"
 }
 ```
 
@@ -286,8 +287,14 @@ If no account member has that e-mail, the conversation is left
 Optional deal: send `create_deal: true` (only the boolean `true` enables
 it) to also open a sales deal for the contact. `deal_title` (optional,
 trimmed, max 200 chars) sets its title; the default is
-`Lead — <name or phone>`. The deal lands in the account's **oldest
-pipeline** (the one the board opens by default), **first stage**, in the
+`Lead — <name or phone>`. `deal_pipeline` (optional, trimmed, max 80
+chars, else `400`) chooses the destination pipeline **by name**
+(case-insensitive exact match, e.g. `"Financeiro"`; `*` is not allowed). There is
+**no fallback**: if the account has no pipeline with that name, no deal is
+created and `deal` is `null` (the handoff still succeeds). Without
+`deal_pipeline` the deal lands in the account's **oldest
+pipeline** (the one the board opens by default). Either way it goes in the
+pipeline's **first stage**, in the
 **account's default currency**, value `0`, status `open`,
 the handoff `summary` as its notes, linked to the conversation and
 assigned to the same member. **Dedupe:** if the contact already has an
