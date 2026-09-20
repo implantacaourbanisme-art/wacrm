@@ -107,3 +107,72 @@ describe('classifyZApiMessageEvent contract used by the webhook route', () => {
     expect(classifyZApiMessageEvent({ fromMe: true }, true)).toBe('ingest_outbound')
   })
 })
+
+describe('normalizeContent — messages we sent (mirror mode)', () => {
+  it('renders a list menu as readable text with its options', () => {
+    const res = normalizeContent({
+      instanceId: 'inst-1',
+      messageId: 'msg-7',
+      fromMe: true,
+      listMessage: {
+        description: 'Escolha abaixo a opção desejada.',
+        footerText: null,
+        title: null,
+        buttonText: 'Ver Opções',
+        sections: [
+          {
+            title: null,
+            options: [
+              { title: 'Comercial', description: '', rowId: 'Comercial' },
+              { title: 'Financeiro', description: '', rowId: 'Financeiro' },
+            ],
+          },
+        ],
+      },
+    })
+    expect(res.contentType).toBe('text')
+    expect(res.rawTypeLabel).toBe('listMessage')
+    expect(res.interactiveReplyId).toBeNull()
+    expect(res.contentText).toBe(
+      'Escolha abaixo a opção desejada.\n\n• Comercial\n• Financeiro'
+    )
+  })
+
+  it('includes list title, footer and option descriptions when present', () => {
+    const res = normalizeContent({
+      instanceId: 'inst-1',
+      messageId: 'msg-8',
+      listMessage: {
+        description: 'Menu',
+        footerText: 'Rodapé',
+        title: 'Título',
+        sections: [
+          { title: 'Setores', options: [{ title: 'Jurídico', description: 'Contratos', rowId: 'j' }] },
+        ],
+      },
+    })
+    expect(res.contentText).toBe('Título\nMenu\n\nSetores\n• Jurídico — Contratos\n\nRodapé')
+  })
+
+  it('renders a buttons message with its button labels', () => {
+    const res = normalizeContent({
+      instanceId: 'inst-1',
+      messageId: 'msg-9',
+      buttonsMessage: {
+        message: 'Como posso ajudar?',
+        buttons: [
+          { buttonId: '1', buttonText: { displayText: '2 Via' } },
+          { buttonId: '2', buttonText: { displayText: 'Demonstrativo' } },
+        ],
+      },
+    })
+    expect(res.contentType).toBe('text')
+    expect(res.rawTypeLabel).toBe('buttonsMessage')
+    expect(res.contentText).toBe('Como posso ajudar?\n\n• 2 Via\n• Demonstrativo')
+  })
+
+  it('still falls back to the unsupported label for unknown shapes', () => {
+    const res = normalizeContent({ instanceId: 'inst-1', messageId: 'msg-10' })
+    expect(res.contentText).toBe('[Unsupported message type]')
+  })
+})

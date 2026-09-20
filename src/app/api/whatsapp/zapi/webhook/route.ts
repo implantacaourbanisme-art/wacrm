@@ -73,6 +73,28 @@ interface ZApiListResponse {
   title?: string
   selectedRowId: string
 }
+interface ZApiListOption {
+  title?: string | null
+  description?: string | null
+  rowId?: string
+}
+interface ZApiListSection {
+  title?: string | null
+  options?: ZApiListOption[]
+}
+/** A list menu WE sent (send-option-list) — seen only as a fromMe echo. */
+interface ZApiListMessage {
+  title?: string | null
+  description?: string | null
+  footerText?: string | null
+  buttonText?: string | null
+  sections?: ZApiListSection[]
+}
+/** A buttons message WE sent — seen only as a fromMe echo. */
+interface ZApiButtonsMessage {
+  message?: string | null
+  buttons?: { buttonId?: string; buttonText?: { displayText?: string } }[]
+}
 interface ZApiReaction {
   /** Empty/absent means "reaction removed". */
   value?: string
@@ -121,6 +143,8 @@ export interface ZApiWebhookBody {
   contacts?: any[]
   buttonsResponseMessage?: ZApiButtonsResponse
   listResponseMessage?: ZApiListResponse
+  listMessage?: ZApiListMessage
+  buttonsMessage?: ZApiButtonsMessage
   reaction?: ZApiReaction
   // ---- MessageStatusCallback fields (type === 'MessageStatusCallback') ----
   /** SENT | RECEIVED | READ | READ_BY_ME | PLAYED. */
@@ -149,6 +173,33 @@ export function mapZApiStatus(raw: string | undefined): NormalizedDeliveryStatus
     default:
       return null
   }
+}
+
+/** Readable text for a list menu we sent, so the Inbox shows what the
+ *  customer saw instead of "[Unsupported message type]". */
+export function formatListMessage(list: ZApiListMessage): string | null {
+  const header = [list.title, list.description].filter(Boolean).join('\n')
+  const sections = (list.sections ?? [])
+    .map((section) => {
+      const options = (section.options ?? [])
+        .filter((o) => o.title)
+        .map((o) => `• ${o.title}${o.description ? ` — ${o.description}` : ''}`)
+      return [section.title, ...options].filter(Boolean).join('\n')
+    })
+    .filter(Boolean)
+  const text = [header, ...sections, list.footerText].filter(Boolean).join('\n\n')
+  return text || null
+}
+
+/** Same idea for a buttons message we sent. */
+export function formatButtonsMessage(buttons: ZApiButtonsMessage): string | null {
+  const labels = (buttons.buttons ?? [])
+    .map((b) => b.buttonText?.displayText)
+    .filter(Boolean)
+    .map((label) => `• ${label}`)
+    .join('\n')
+  const text = [buttons.message, labels].filter(Boolean).join('\n\n')
+  return text || null
 }
 
 export function normalizeContent(body: ZApiWebhookBody): {
@@ -291,6 +342,32 @@ export function normalizeContent(body: ZApiWebhookBody): {
       mediaUrl: null,
       mediaType: null,
       interactiveReplyId: body.listResponseMessage.selectedRowId || null,
+    }
+  }
+  if (body.listMessage) {
+    const text = formatListMessage(body.listMessage)
+    if (text) {
+      return {
+        contentType: 'text',
+        rawTypeLabel: 'listMessage',
+        contentText: text,
+        mediaUrl: null,
+        mediaType: null,
+        interactiveReplyId: null,
+      }
+    }
+  }
+  if (body.buttonsMessage) {
+    const text = formatButtonsMessage(body.buttonsMessage)
+    if (text) {
+      return {
+        contentType: 'text',
+        rawTypeLabel: 'buttonsMessage',
+        contentText: text,
+        mediaUrl: null,
+        mediaType: null,
+        interactiveReplyId: null,
+      }
     }
   }
   return {
