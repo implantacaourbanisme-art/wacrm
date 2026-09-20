@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
@@ -42,7 +42,23 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
 
+  // Monotonic request id: only the latest fetch may write state, so a
+  // slow response for a previous contact never shows (e.g. its CPF/CNPJ).
+  const requestSeq = useRef(0);
+  const emailTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const phoneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (emailTimer.current) clearTimeout(emailTimer.current);
+      if (phoneTimer.current) clearTimeout(phoneTimer.current);
+    },
+    [],
+  );
+
   const fetchContactData = useCallback(async () => {
+    const seq = ++requestSeq.current;
+    // Never keep the previous contact's document while loading.
+    setDocumentDigits(null);
     if (!contact) return;
 
     const supabase = createClient();
@@ -68,8 +84,12 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .select("value, custom_fields!inner(field_name)")
         .eq("contact_id", contact.id)
         .eq("custom_fields.field_name", CPF_CNPJ_FIELD_NAME)
+        .order("created_at", { ascending: true })
+        .limit(1)
         .maybeSingle(),
     ]);
+
+    if (seq !== requestSeq.current) return; // stale response
 
     if (dealsRes.data) setDeals(dealsRes.data);
     if (notesRes.data) setNotes(notesRes.data);
@@ -101,9 +121,14 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     // phone number to copy, but its @username still identifies them.
     const handle = contact ? contactHandle(contact) : '';
     if (!handle) return;
-    await navigator.clipboard.writeText(handle);
+    try {
+      await navigator.clipboard.writeText(handle);
+    } catch {
+      return;
+    }
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (phoneTimer.current) clearTimeout(phoneTimer.current);
+    phoneTimer.current = setTimeout(() => setCopied(false), 2000);
     // Dep is the whole `contact` object (not `contact?.phone`) so the
     // React Compiler's inference agrees with the manual dep list —
     // fixes the `preserve-manual-memoization` lint error.
@@ -111,9 +136,14 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
   const handleCopyEmail = useCallback(async () => {
     if (!contact?.email) return;
-    await navigator.clipboard.writeText(contact.email);
+    try {
+      await navigator.clipboard.writeText(contact.email);
+    } catch {
+      return;
+    }
     setCopiedEmail(true);
-    setTimeout(() => setCopiedEmail(false), 2000);
+    if (emailTimer.current) clearTimeout(emailTimer.current);
+    emailTimer.current = setTimeout(() => setCopiedEmail(false), 2000);
   }, [contact]);
 
   const handleAddNote = useCallback(async () => {
@@ -200,8 +230,9 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
             {contact.email && (
               <button
+                type="button"
                 onClick={handleCopyEmail}
-                aria-label={tSidebar("copyEmail")}
+                aria-label={`${tSidebar("copyEmail")}: ${contact.email}`}
                 className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
               >
                 <Mail className="h-4 w-4 text-muted-foreground" />

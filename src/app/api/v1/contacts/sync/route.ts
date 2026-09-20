@@ -13,6 +13,8 @@ import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
 import { ContactError, resolveAuditUserId } from '@/lib/api/v1/contacts';
 import { parseSyncBody, applyContactSync } from '@/lib/contacts/sync';
 
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   try {
     const ctx = await requireApiKey(request, 'contacts:write');
@@ -28,7 +30,8 @@ export async function POST(request: Request) {
       ctx.supabase,
       ctx.accountId,
       auditUserId,
-      parsed.items
+      parsed.items,
+      parsed.invalid
     );
     return ok(result, 200);
   } catch (err) {

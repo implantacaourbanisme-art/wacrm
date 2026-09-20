@@ -20,6 +20,8 @@ const MAX_TEXT = 500
 const MAX_FIELD_NAME = 60
 
 export interface SyncItem {
+  /** Position of this item in the original request. */
+  index: number
   phone: string
   name: string | null
   email: string | null
@@ -27,7 +29,11 @@ export interface SyncItem {
 }
 
 export type ParsedSync =
-  | { ok: true; items: SyncItem[] }
+  | {
+      ok: true
+      items: SyncItem[]
+      invalid: { index: number; phone: string; error: string }[]
+    }
   | { ok: false; message: string }
 
 export interface SyncResult {
@@ -54,21 +60,27 @@ export function parseSyncBody(body: unknown): ParsedSync {
   }
 
   const items: SyncItem[] = []
+  const invalid: { index: number; phone: string; error: string }[] = []
   for (let i = 0; i < contacts.length; i++) {
     const raw = contacts[i]
     if (typeof raw !== 'object' || raw === null) {
-      return { ok: false, message: `contacts[${i}] must be an object` }
+      invalid.push({ index: i, phone: '', error: `contacts[${i}] must be an object` })
+      continue
     }
     const c = raw as Record<string, unknown>
     const phone = text(c.phone, 40)
-    if (!phone) return { ok: false, message: `contacts[${i}].phone is required` }
+    if (!phone) {
+      const rawPhone = typeof c.phone === 'string' ? c.phone.trim().slice(0, 40) : ''
+      invalid.push({ index: i, phone: rawPhone, error: `contacts[${i}].phone is required` })
+      continue
+    }
 
     const customFields: Record<string, string> = {}
     const rawFields = c.custom_fields
     if (typeof rawFields === 'object' && rawFields !== null) {
       for (const [name, value] of Object.entries(rawFields as Record<string, unknown>)) {
-        const fieldName = text(name, MAX_FIELD_NAME)
-        if (!fieldName) continue
+        const fieldName = text(name, Number.MAX_SAFE_INTEGER)
+        if (!fieldName || fieldName.length > MAX_FIELD_NAME) continue
         if (fieldName === CPF_CNPJ_FIELD_NAME) {
           const doc = normalizeDocument(value)
           if (doc) customFields[fieldName] = doc
@@ -79,35 +91,49 @@ export function parseSyncBody(body: unknown): ParsedSync {
       }
     }
 
-    items.push({ phone, name: text(c.name, 200), email: text(c.email, 320), customFields })
+    items.push({ index: i, phone, name: text(c.name, 200), email: text(c.email, 320), customFields })
   }
-  return { ok: true, items }
+  return { ok: true, items, invalid }
 }
 
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (ch) => '\\' + ch)
+}
+
+/**
+ * Resolves a custom field id (case-insensitive name match). Only the
+ * CPF/CNPJ field may be created on demand; any other unknown name
+ * returns null and the value is skipped.
+ */
 async function ensureCustomField(
   db: SupabaseClient,
   accountId: string,
   auditUserId: string,
   name: string,
   cache: Map<string, string>
-): Promise<string> {
-  const cached = cache.get(name)
+): Promise<string | null> {
+  if (name.includes('*')) return null
+  const key = name.toLowerCase()
+  const cached = cache.get(key)
   if (cached) return cached
 
+  const escaped = escapeLike(name)
   const lookup = () =>
     db
       .from('custom_fields')
       .select('id')
       .eq('account_id', accountId)
-      .eq('field_name', name)
+      .ilike('field_name', escaped)
+      .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle()
 
   const { data: found } = await lookup()
   if (found?.id) {
-    cache.set(name, found.id as string)
+    cache.set(key, found.id as string)
     return found.id as string
   }
+  if (name !== CPF_CNPJ_FIELD_NAME) return null
 
   const { data: created, error } = await db
     .from('custom_fields')
@@ -118,12 +144,12 @@ async function ensureCustomField(
     // Lost a race against a concurrent run: re-read the winner.
     const { data: raced } = await lookup()
     if (raced?.id) {
-      cache.set(name, raced.id as string)
+      cache.set(key, raced.id as string)
       return raced.id as string
     }
     throw new ContactError(`Failed to create custom field '${name}'`, 500)
   }
-  cache.set(name, created.id as string)
+  cache.set(key, created.id as string)
   return created.id as string
 }
 
@@ -174,6 +200,7 @@ async function syncOne(
 
   for (const [name, value] of Object.entries(item.customFields)) {
     const fieldId = await ensureCustomField(db, accountId, auditUserId, name, fieldCache)
+    if (!fieldId) continue
     const { data: current } = await db
       .from('contact_custom_values')
       .select('value')
@@ -198,20 +225,20 @@ export async function applyContactSync(
   db: SupabaseClient,
   accountId: string,
   auditUserId: string,
-  items: SyncItem[]
+  items: SyncItem[],
+  invalid: { index: number; phone: string; error: string }[] = []
 ): Promise<SyncResult> {
-  const result: SyncResult = { created: 0, updated: 0, unchanged: 0, failed: [] }
+  const result: SyncResult = { created: 0, updated: 0, unchanged: 0, failed: [...invalid] }
   const fieldCache = new Map<string, string>()
 
-  for (let index = 0; index < items.length; index++) {
-    const item = items[index]
+  for (const item of items) {
     try {
       const status = await syncOne(db, accountId, auditUserId, item, fieldCache)
       result[status] += 1
     } catch (err) {
-      console.error('[contacts/sync] item failed:', index, err)
+      console.error('[contacts/sync] item failed:', item.index, err)
       result.failed.push({
-        index,
+        index: item.index,
         phone: item.phone,
         error: err instanceof ContactError ? err.message : 'Unexpected error',
       })

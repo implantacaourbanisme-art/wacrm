@@ -221,13 +221,17 @@ Response (`200`):
 ```
 
 Conflict rules: a non-empty `email` or custom value in the body wins
-when it differs from what is stored; `name` only fills a contact whose
+when it differs from what is stored (e-mail comparison is
+case-insensitive: a case-only difference counts as unchanged); `name` only fills a contact whose
 name is empty (or just its phone number); nothing is ever blanked or
-deleted. Custom fields are created on first use. `CPF/CNPJ` accepts a
+deleted. Custom field names are matched case-insensitively. Only the `CPF/CNPJ`
+field is created on demand; any other custom field name is written only
+if that field already exists (otherwise the value is skipped). `CPF/CNPJ` accepts a
 CPF or CNPJ with or without punctuation, is stored as digits only, and
-is ignored when it does not have 11 or 14 digits. A failing item is
-reported in `failed` (by its `index` in the request) and does not stop
-the rest of the batch.
+is ignored when it does not have 11 or 14 digits (this is not an error).
+A malformed item (not an object, or without `phone`) and a failing item
+are both reported in `failed` (by their `index` in the request) and do
+not stop the rest of the batch.
 
 ### `GET` / `PATCH /api/v1/contacts/{id}`
 

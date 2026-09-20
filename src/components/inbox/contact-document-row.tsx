@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Copy, Eye, EyeOff, IdCard } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { formatDocument, maskDocument } from "@/lib/contacts/document";
@@ -16,10 +16,20 @@ export function ContactDocumentRow({ digits }: { digits: string }) {
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(digits);
+    try {
+      await navigator.clipboard.writeText(digits);
+    } catch {
+      return; // clipboard unavailable/denied: leave the icon unchanged
+    }
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 2000);
   }, [digits]);
 
   const iconButton =
