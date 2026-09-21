@@ -141,6 +141,9 @@ export function TemplateManager() {
   // no Meta-only controls, so a Z-API account never flashes the Meta UI.
   const { provider, loading: providerLoading } = useWhatsAppProviderState();
   const isZapi = provider === 'zapi';
+  const blankForm: TemplateFormData = isZapi
+    ? { ...emptyForm, language: 'pt_BR' }
+    : emptyForm;
   const showMetaUi = !providerLoading && !isZapi;
 
   const [loading, setLoading] = useState(true);
@@ -279,7 +282,7 @@ export function TemplateManager() {
 
   function openCreate() {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm(blankForm);
     setDialogOpen(true);
   }
 
@@ -319,7 +322,7 @@ export function TemplateManager() {
             : t('toastSubmitNewSuccess'),
       );
       setDialogOpen(false);
-      setForm(emptyForm);
+      setForm(blankForm);
       setEditingId(null);
     } catch (err) {
       console.error('Submit error:', err);
@@ -711,7 +714,7 @@ export function TemplateManager() {
           setDialogOpen(open);
           if (!open) {
             setEditingId(null);
-            setForm(emptyForm);
+            setForm(blankForm);
           }
         }}
       >
