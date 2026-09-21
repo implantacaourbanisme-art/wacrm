@@ -8,6 +8,8 @@ import {
   batchRetryDelayMs,
 } from '@/lib/broadcast-retry';
 import { normalizeKey } from '@/lib/contacts/dedupe';
+import { getAccountWhatsAppProvider } from '@/lib/whatsapp/provider';
+import { broadcastSendPlan, type PacingProviderKind } from '@/lib/whatsapp/send-pacing';
 import { Contact, MessageTemplate } from '@/types';
 
 export type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -69,8 +71,10 @@ interface UseBroadcastSendingReturn {
  * send is ~100 calls over several minutes, and a bucket sized for
  * "one call per campaign" throttles most of it away (issue #472).
  */
-const SEND_BATCH_SIZE = 10;
-const SEND_BATCH_DELAY_MS = 1000;
+// Batch size and inter-batch pause now come from broadcastSendPlan()
+// (send-pacing.ts): Meta keeps 10 per request / 1 s; Z-API, an
+// unofficial connection, sends one recipient per request with a random
+// 3-8 s pause to lower the ban risk.
 
 /** `broadcast_recipients` inserts are independent of the send rate. */
 const INSERT_BATCH_SIZE = 200;
@@ -490,8 +494,17 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       const messageParams =
         isMediaHeader && headerMediaUrl ? { headerMediaUrl } : undefined;
 
-      for (let i = 0; i < recipients.length; i += SEND_BATCH_SIZE) {
-        const batch = recipients.slice(i, i + SEND_BATCH_SIZE);
+      // Provider is looked up once; on error/unknown keep today's pacing.
+      let providerKind: PacingProviderKind = null;
+      try {
+        providerKind = await getAccountWhatsAppProvider(supabase, accountId);
+      } catch {
+        providerKind = null;
+      }
+      const sendPlan = broadcastSendPlan(providerKind);
+
+      for (let i = 0; i < recipients.length; i += sendPlan.batchSize) {
+        const batch = recipients.slice(i, i + sendPlan.batchSize);
 
         const apiRecipients = batch
           .filter((r) => r.contact?.phone)
@@ -593,8 +606,8 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           30 + Math.round(((i + batch.length) / totalRecipients) * 60);
         setProgress(progressPct);
 
-        if (i + SEND_BATCH_SIZE < recipients.length) {
-          await sleep(SEND_BATCH_DELAY_MS);
+        if (i + sendPlan.batchSize < recipients.length) {
+          await sleep(sendPlan.delayMs());
         }
       }
 

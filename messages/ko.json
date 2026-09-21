@@ -841,7 +841,9 @@
         "estimatedReach": "예상 도달 수",
         "language": "언어",
         "confirmTitle": "브로드캐스트 확인",
-        "confirmDesc": "<b>{template}</b> 템플릿으로 연락처 <b>{count, number}</b>명에게 이 브로드캐스트를 보내려고 합니다. 이 작업은 되돌릴 수 없습니다."
+        "confirmDesc": "<b>{template}</b> 템플릿으로 연락처 <b>{count, number}</b>명에게 이 브로드캐스트를 보내려고 합니다. 이 작업은 되돌릴 수 없습니다.",
+        "zapiPacingHint": "간격 발송: 번호 차단 위험을 줄이기 위해 메시지가 {min}~{max}초 간격으로 하나씩 발송됩니다. 발송이 끝날 때까지 이 탭을 열어 두세요.",
+        "zapiPacingEstimate": "예상 소요 시간: 약 {minutes, number}분."
       }
     }
   },

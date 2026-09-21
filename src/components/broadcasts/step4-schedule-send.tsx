@@ -16,6 +16,11 @@ import {
 } from '@/components/ui/dialog';
 import { ArrowLeft, Send, Loader2, Users, Save } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { useWhatsAppProvider } from '@/hooks/use-whatsapp-provider';
+import {
+  ZAPI_SEND_DELAY_MIN_MS,
+  ZAPI_SEND_DELAY_MAX_MS,
+} from '@/lib/whatsapp/send-pacing';
 
 interface AudienceConfig {
   type: string;
@@ -47,6 +52,7 @@ export function Step4ScheduleSend({
   progress,
 }: Step4Props) {
   const t = useTranslations('Broadcasts.wizard');
+  const provider = useWhatsAppProvider();
   const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
   const [loadingReach, setLoadingReach] = useState(true);
@@ -161,6 +167,30 @@ export function Step4ScheduleSend({
             />
           </div>
         </div>
+      )}
+
+      {provider === 'zapi' && (
+        <p className="rounded-lg border border-border bg-muted/50 p-3 text-xs text-muted-foreground">
+          {t('scheduleSend.zapiPacingHint', {
+            min: ZAPI_SEND_DELAY_MIN_MS / 1000,
+            max: ZAPI_SEND_DELAY_MAX_MS / 1000,
+          })}
+          {!loadingReach && estimatedReach > 0 && (
+            <>
+              {' '}
+              {t('scheduleSend.zapiPacingEstimate', {
+                minutes: Math.max(
+                  1,
+                  Math.round(
+                    (estimatedReach *
+                      ((ZAPI_SEND_DELAY_MIN_MS + ZAPI_SEND_DELAY_MAX_MS) / 2)) /
+                      60000,
+                  ),
+                ),
+              })}
+            </>
+          )}
+        </p>
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">

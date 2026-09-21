@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { resolveSendProvider } from '@/lib/whatsapp/provider'
+import { pacingDelayMs, sleep } from '@/lib/whatsapp/send-pacing'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import {
   resolveTemplateRow,
@@ -173,7 +174,13 @@ export async function POST(request: Request) {
     let sentCount = 0
     let failedCount = 0
 
+    let firstRecipient = true
     for (const recipient of recipients) {
+      // Z-API (unofficial): space out sends within one request too.
+      if (!firstRecipient && sendProvider.kind === 'zapi') {
+        await sleep(pacingDelayMs('zapi'))
+      }
+      firstRecipient = false
       const sanitized = sanitizePhoneForMeta(recipient.phone)
 
       if (!isValidE164(sanitized)) {

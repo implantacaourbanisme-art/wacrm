@@ -4,6 +4,8 @@ import {
   createBroadcast,
   finalizeBroadcastStatus,
   BroadcastError,
+  deliverBroadcast,
+  type BroadcastPlan,
 } from './broadcast-core';
 
 // Contact resolution and token decryption are exercised elsewhere — stub
@@ -216,5 +218,61 @@ describe('finalizeBroadcastStatus', () => {
       'b-1',
     );
     expect(writes.update?.status).toBe('sent');
+  });
+});
+
+// ── send pacing ──────────────────────────────────────────────
+function deliverDb(): SupabaseClient {
+  const chain: Record<string, unknown> = {};
+  chain.update = () => chain;
+  chain.select = () => chain;
+  chain.eq = () => chain;
+  // awaited chains resolve to a count-less result → finalize marks 'sent'
+  chain.then = (res: (v: unknown) => unknown) => res({ count: 0, error: null });
+  return { from: () => chain } as unknown as SupabaseClient;
+}
+
+function makePlan(kind: 'meta' | 'zapi', n: number): BroadcastPlan {
+  return {
+    broadcastId: 'b1',
+    templateName: 'promo',
+    templateLanguage: 'pt_BR',
+    sendProvider: {
+      kind,
+      sendTemplate: vi.fn(async () => ({ messageId: 'm' })),
+    } as unknown as BroadcastPlan['sendProvider'],
+    templateRow: null,
+    planned: Array.from({ length: n }, (_, i) => ({
+      recipientRowId: `r${i}`,
+      phone: `+55119999000${i}`,
+      params: [],
+    })),
+    rejected: 0,
+  };
+}
+
+describe('deliverBroadcast pacing', () => {
+  it('zapi waits 3-8 s before every recipient except the first', async () => {
+    const sleepFn = vi.fn(async () => {});
+    const plan = makePlan('zapi', 4);
+    await deliverBroadcast(deliverDb(), plan, sleepFn);
+    expect(sleepFn).toHaveBeenCalledTimes(3);
+    for (const [ms] of sleepFn.mock.calls as unknown as number[][]) {
+      expect(ms).toBeGreaterThanOrEqual(3000);
+      expect(ms).toBeLessThanOrEqual(8000);
+    }
+    expect(plan.sendProvider.sendTemplate).toHaveBeenCalledTimes(4);
+  });
+
+  it('zapi never waits before a single recipient', async () => {
+    const sleepFn = vi.fn(async () => {});
+    await deliverBroadcast(deliverDb(), makePlan('zapi', 1), sleepFn);
+    expect(sleepFn).not.toHaveBeenCalled();
+  });
+
+  it('meta never waits', async () => {
+    const sleepFn = vi.fn(async () => {});
+    await deliverBroadcast(deliverDb(), makePlan('meta', 4), sleepFn);
+    expect(sleepFn).not.toHaveBeenCalled();
   });
 });

@@ -841,7 +841,9 @@
         "estimatedReach": "Alcance estimado",
         "language": "Idioma",
         "confirmTitle": "Confirmar disparo",
-        "confirmDesc": "Você está prestes a enviar este disparo para <b>{count, number}</b> {count, plural, =1 {contato} other {contatos}} usando o modelo <b>{template}</b>. Esta ação não pode ser desfeita."
+        "confirmDesc": "Você está prestes a enviar este disparo para <b>{count, number}</b> {count, plural, =1 {contato} other {contatos}} usando o modelo <b>{template}</b>. Esta ação não pode ser desfeita.",
+        "zapiPacingHint": "Envio espaçado: para reduzir o risco de bloqueio do número, as mensagens saem uma a uma com intervalo de {min} a {max} segundos. Mantenha esta aba aberta até o fim do disparo.",
+        "zapiPacingEstimate": "Duração estimada: cerca de {minutes, number} {minutes, plural, =1 {minuto} other {minutos}}."
       }
     }
   },

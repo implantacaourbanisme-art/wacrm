@@ -841,7 +841,9 @@
         "estimatedReach": "Alcance estimado",
         "language": "Idioma",
         "confirmTitle": "Confirmar difusión",
-        "confirmDesc": "Estás a punto de enviar esta difusión a <b>{count, number}</b> {count, plural, =1 {contacto} other {contactos}} con la plantilla <b>{template}</b>. Esta acción no se puede deshacer."
+        "confirmDesc": "Estás a punto de enviar esta difusión a <b>{count, number}</b> {count, plural, =1 {contacto} other {contactos}} con la plantilla <b>{template}</b>. Esta acción no se puede deshacer.",
+        "zapiPacingHint": "Envío espaciado: para reducir el riesgo de bloqueo del número, los mensajes salen uno por uno con un intervalo de {min} a {max} segundos. Mantén esta pestaña abierta hasta el final del envío.",
+        "zapiPacingEstimate": "Duración estimada: unos {minutes, number} {minutes, plural, =1 {minuto} other {minutos}}."
       }
     }
   },

@@ -29,6 +29,7 @@ import {
 import { resolveTemplateRow, templateContentText } from '@/lib/whatsapp/template-body';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
+import { pacingDelayMs, sleep } from '@/lib/whatsapp/send-pacing';
 
 /** Thrown by createBroadcast on a caller-visible failure; route maps it. */
 export class BroadcastError extends Error {
@@ -263,9 +264,17 @@ export async function createBroadcast(
  */
 export async function deliverBroadcast(
   db: SupabaseClient,
-  plan: BroadcastPlan
+  plan: BroadcastPlan,
+  sleepFn: (ms: number) => Promise<void> = sleep
 ): Promise<void> {
+  let first = true;
   for (const recipient of plan.planned) {
+    // Z-API is an unofficial connection: space the sends out to lower the
+    // ban risk. No wait before the first recipient; Meta never waits.
+    if (!first && plan.sendProvider.kind === 'zapi') {
+      await sleepFn(pacingDelayMs('zapi'));
+    }
+    first = false;
     const variants = phoneVariants(recipient.phone);
     let sentMessageId: string | null = null;
     let lastError: string | null = null;
