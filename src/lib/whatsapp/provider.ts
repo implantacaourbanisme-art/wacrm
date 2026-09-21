@@ -331,21 +331,4 @@ export async function loadWhatsAppSendProvider(
   return resolveSendProvider(config)
 }
 
-/**
- * Which transport the account's WhatsApp connection uses. `null` means no
- * `whatsapp_config` row (or the lookup failed) — callers treat that as
- * "not zapi". An existing row with an unset provider is a pre-migration-043
- * Meta connection.
- */
-export async function getAccountWhatsAppProvider(
-  supabase: SupabaseClient,
-  accountId: string,
-): Promise<'meta' | 'zapi' | null> {
-  const { data, error } = await supabase
-    .from('whatsapp_config')
-    .select('provider')
-    .eq('account_id', accountId)
-    .maybeSingle()
-  if (error || !data) return null
-  return (data as { provider?: string | null }).provider === 'zapi' ? 'zapi' : 'meta'
-}
+export { getAccountWhatsAppProvider } from '@/lib/whatsapp/account-provider'

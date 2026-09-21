@@ -105,9 +105,11 @@ describe('RATE_LIMITS presets', () => {
     expect(RATE_LIMITS.broadcast.windowMs).toBe(60_000)
   })
 
-  it('the broadcast budget carries a campaign per-batch call pattern', async () => {
+  it('the broadcast budget still covers a Z-API campaign request pattern', async () => {
     __resetRateLimitForTests()
     const { RATE_LIMITS } = await import('./rate-limit')
+    // Z-API sends one recipient per request with a >=3 s pause (<= ~20
+    // requests/min), so the 60/min budget still holds.
     expect(RATE_LIMITS.broadcast.limit).toBeGreaterThanOrEqual(45)
   })
 })

@@ -229,6 +229,24 @@ describe('PATCH /templates/[id]', () => {
     expect(decrypt).not.toHaveBeenCalled()
   })
 
+  it('zapi: legacy row that still has a meta_template_id is edited locally, no Meta/decrypt', async () => {
+    state.existing = {
+      id: ID,
+      name: 'promo_setembro',
+      status: 'APPROVED',
+      meta_template_id: 'meta-legacy',
+      language: 'pt_BR',
+    }
+    const res = await PATCH(patchReq({ ...payload, body_text: 'Texto legado' }), ctx)
+    const json = await res.json()
+    expect(res.status).toBe(200)
+    expect(json.local).toBe(true)
+    expect(state.updates[0]).toMatchObject({ body_text: 'Texto legado', status: 'APPROVED' })
+    expect(editMessageTemplate).not.toHaveBeenCalled()
+    expect(ensureMediaHeaderHandle).not.toHaveBeenCalled()
+    expect(decrypt).not.toHaveBeenCalled()
+  })
+
   it('meta: row without meta_template_id is still rejected', async () => {
     state.provider = 'meta'
     state.existing = {
@@ -266,6 +284,24 @@ describe('DELETE /templates/[id]', () => {
     expect(res.status).toBe(200)
     expect(state.deletes).toBe(1)
     expect(deleteMessageTemplate).not.toHaveBeenCalled()
+  })
+
+  it('zapi: legacy row with meta_template_id deletes locally, Meta/decrypt untouched', async () => {
+    state.existing = { id: ID, name: 'promo_setembro', meta_template_id: 'meta-legacy' }
+    const res = await DELETE(new Request('http://x', { method: 'DELETE' }), ctx)
+    expect(res.status).toBe(200)
+    expect(state.deletes).toBe(1)
+    expect(deleteMessageTemplate).not.toHaveBeenCalled()
+    expect(decrypt).not.toHaveBeenCalled()
+  })
+
+  it('meta: row with meta_template_id still deletes on Meta', async () => {
+    state.provider = 'meta'
+    state.existing = { id: ID, name: 'x', meta_template_id: 'meta-1' }
+    const res = await DELETE(new Request('http://x', { method: 'DELETE' }), ctx)
+    expect(res.status).toBe(200)
+    expect(deleteMessageTemplate).toHaveBeenCalledTimes(1)
+    expect(state.deletes).toBe(1)
   })
 })
 

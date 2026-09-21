@@ -148,6 +148,16 @@ export async function createBroadcast(
     );
   }
   const templateRow = resolvedTemplate.row;
+  // Z-API has no remote template registry: the local row IS the message
+  // body. Without it every recipient would fail after the 202, so fail
+  // fast here instead.
+  if (sendProvider.kind === 'zapi' && !templateRow) {
+    throw new BroadcastError(
+      'template_not_found',
+      'Modelo não encontrado. Em conexões por QR Code (Z-API) o modelo precisa existir em Configurações → Modelos.',
+      400
+    );
+  }
 
   // Resolve each recipient to a contact. Invalid phones are dropped
   // (counted as rejected) rather than aborting the whole broadcast.

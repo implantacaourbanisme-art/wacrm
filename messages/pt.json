@@ -842,7 +842,7 @@
         "language": "Idioma",
         "confirmTitle": "Confirmar disparo",
         "confirmDesc": "Você está prestes a enviar este disparo para <b>{count, number}</b> {count, plural, =1 {contato} other {contatos}} usando o modelo <b>{template}</b>. Esta ação não pode ser desfeita.",
-        "zapiPacingHint": "Envio espaçado: para reduzir o risco de bloqueio do número, as mensagens saem uma a uma com intervalo de {min} a {max} segundos. Mantenha esta aba aberta até o fim do disparo.",
+        "zapiPacingHint": "Envio espaçado: para reduzir o risco de bloqueio do número, as mensagens saem uma a uma com intervalo de {min} a {max} segundos. Mantenha esta aba aberta e em primeiro plano até o fim do disparo.",
         "zapiPacingEstimate": "Duração estimada: cerca de {minutes, number} {minutes, plural, =1 {minuto} other {minutos}}."
       }
     }
@@ -1549,7 +1549,7 @@
       "toastUploadSuccess": "Arquivo enviado.",
       "toastUploadFailed": "Falha no upload.",
       "headerSampleAlt": "Exemplo de cabeçalho",
-      "zapiBanner": "Conexão por QR Code (Z-API): os modelos são salvos aqui e não passam pela Meta. Só o texto da mensagem é enviado — cabeçalho, rodapé e botões não são usados.",
+      "zapiBanner": "Conexão por QR Code (Z-API): os modelos são salvos aqui e não passam pela Meta. Só o texto da mensagem é enviado — cabeçalho, rodapé e botões não são usados. O nome do modelo deve usar apenas letras minúsculas, números e _ (ex.: promo_setembro).",
       "localBadge": "Modelo local",
       "saveTemplate": "Salvar modelo",
       "toastLocalSaved": "Modelo salvo"

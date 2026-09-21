@@ -842,7 +842,7 @@
         "language": "Language",
         "confirmTitle": "Confirm Broadcast",
         "confirmDesc": "You are about to send this broadcast to <b>{count, number}</b> {count, plural, =1 {contact} other {contacts}} using the <b>{template}</b> template. This action cannot be undone.",
-        "zapiPacingHint": "Paced sending: to reduce the risk of your number being blocked, messages go out one by one with a {min} to {max} second interval. Keep this tab open until the broadcast finishes.",
+        "zapiPacingHint": "Paced sending: to reduce the risk of your number being blocked, messages go out one by one with a {min} to {max} second interval. Keep this tab open and in the foreground until the broadcast finishes (browsers slow down hidden tabs).",
         "zapiPacingEstimate": "Estimated duration: about {minutes, number} {minutes, plural, =1 {minute} other {minutes}}."
       }
     }
@@ -1549,7 +1549,7 @@
       "toastUploadSuccess": "File uploaded.",
       "toastUploadFailed": "Upload failed.",
       "headerSampleAlt": "Header sample",
-      "zapiBanner": "QR Code connection (Z-API): templates are saved here and do not go through Meta. Only the message text is sent — header, footer and buttons are not used.",
+      "zapiBanner": "QR Code connection (Z-API): templates are saved here and do not go through Meta. Only the message text is sent — header, footer and buttons are not used. The template name must use only lowercase letters, numbers and _ (e.g. promo_september).",
       "localBadge": "Local template",
       "saveTemplate": "Save template",
       "toastLocalSaved": "Template saved"

@@ -53,7 +53,10 @@ describe('createBroadcast validation', () => {
 // Build a Supabase-shaped mock that gets createBroadcast past its config +
 // template lookups and into persistence. `rpcResult` is what the atomic
 // create_broadcast_with_recipients RPC returns.
-function makeDb(rpcResult: { data: unknown; error: unknown }) {
+function makeDb(
+  rpcResult: { data: unknown; error: unknown },
+  configRow: Record<string, unknown> = { phone_number_id: 'pn-1', access_token: 'enc' }
+) {
   const calls = {
     rpc: [] as { name: string; args: unknown }[],
     // Incremented if the OLD non-atomic path (a direct broadcasts /
@@ -68,7 +71,7 @@ function makeDb(rpcResult: { data: unknown; error: unknown }) {
             eq: () => ({
               single: () =>
                 Promise.resolve({
-                  data: { phone_number_id: 'pn-1', access_token: 'enc' },
+                  data: configRow,
                   error: null,
                 }),
             }),
@@ -103,6 +106,27 @@ function makeDb(rpcResult: { data: unknown; error: unknown }) {
   } as unknown as SupabaseClient;
   return { db: database, calls };
 }
+
+describe('createBroadcast zapi template guard', () => {
+  it('fails fast with template_not_found (400) when a zapi account has no local template', async () => {
+    const { db, calls } = makeDb(
+      { data: [{ broadcast_id: 'b-1', recipient_id: 'r-1', contact_id: 'c1' }], error: null },
+      {
+        provider: 'zapi',
+        zapi_instance_id: 'i',
+        zapi_instance_token: 'enc',
+        zapi_client_token: 'enc',
+      }
+    );
+    await expect(
+      createBroadcast(db, 'acc', 'user', {
+        templateName: 'promo',
+        recipients: [{ to: '+14155550123' }],
+      })
+    ).rejects.toMatchObject({ code: 'template_not_found', status: 400 });
+    expect(calls.rpc).toHaveLength(0);
+  });
+});
 
 describe('createBroadcast atomicity (#370)', () => {
   it('creates parent + recipients through the atomic RPC, never a bare parent insert', async () => {

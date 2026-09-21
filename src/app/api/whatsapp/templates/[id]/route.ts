@@ -100,12 +100,14 @@ export async function PATCH(
       return NextResponse.json({ error: 'Modelo não encontrado.' }, { status: 404 })
     }
 
-    // Z-API accounts keep local-only templates (no Meta counterpart).
-    const isLocalZapi =
-      !existing.meta_template_id &&
+    // Z-API accounts keep local-only templates (no Meta counterpart). The
+    // provider alone decides: legacy rows that still carry a
+    // meta_template_id from before the account switched are edited
+    // locally too, with no Meta call or token decrypt.
+    const isZapi =
       (await getAccountWhatsAppProvider(supabase, accountId)) === 'zapi'
 
-    if (!existing.meta_template_id && !isLocalZapi) {
+    if (!existing.meta_template_id && !isZapi) {
       return NextResponse.json(
         {
           error:
@@ -143,7 +145,7 @@ export async function PATCH(
       )
     }
 
-    if (isLocalZapi) {
+    if (isZapi) {
       const { data: localRow, error: localErr } = await supabase
         .from('message_templates')
         .update({
@@ -320,7 +322,12 @@ export async function DELETE(
       return NextResponse.json({ error: 'Modelo não encontrado.' }, { status: 404 })
     }
 
-    if (existing.meta_template_id && !isDryRun()) {
+    // Z-API accounts never talk to Meta: delete locally even when a legacy
+    // row still has a meta_template_id.
+    const isZapi =
+      (await getAccountWhatsAppProvider(supabase, accountId)) === 'zapi'
+
+    if (existing.meta_template_id && !isZapi && !isDryRun()) {
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')

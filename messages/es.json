@@ -842,7 +842,7 @@
         "language": "Idioma",
         "confirmTitle": "Confirmar difusión",
         "confirmDesc": "Estás a punto de enviar esta difusión a <b>{count, number}</b> {count, plural, =1 {contacto} other {contactos}} con la plantilla <b>{template}</b>. Esta acción no se puede deshacer.",
-        "zapiPacingHint": "Envío espaciado: para reducir el riesgo de bloqueo del número, los mensajes salen uno por uno con un intervalo de {min} a {max} segundos. Mantén esta pestaña abierta hasta el final del envío.",
+        "zapiPacingHint": "Envío espaciado: para reducir el riesgo de bloqueo del número, los mensajes salen uno por uno con un intervalo de {min} a {max} segundos. Mantén esta pestaña abierta y en primer plano hasta el final del envío (los navegadores ralentizan las pestañas ocultas).",
         "zapiPacingEstimate": "Duración estimada: unos {minutes, number} {minutes, plural, =1 {minuto} other {minutos}}."
       }
     }
@@ -1549,7 +1549,7 @@
       "toastUploadSuccess": "Archivo subido.",
       "toastUploadFailed": "Error al subir.",
       "headerSampleAlt": "Muestra del encabezado",
-      "zapiBanner": "Conexión por código QR (Z-API): las plantillas se guardan aquí y no pasan por Meta. Solo se envía el texto del mensaje; el encabezado, el pie y los botones no se usan.",
+      "zapiBanner": "Conexión por código QR (Z-API): las plantillas se guardan aquí y no pasan por Meta. Solo se envía el texto del mensaje; el encabezado, el pie y los botones no se usan. El nombre de la plantilla debe usar solo letras minúsculas, números y _ (p. ej.: promo_septiembre).",
       "localBadge": "Plantilla local",
       "saveTemplate": "Guardar plantilla",
       "toastLocalSaved": "Plantilla guardada"

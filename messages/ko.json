@@ -842,7 +842,7 @@
         "language": "언어",
         "confirmTitle": "브로드캐스트 확인",
         "confirmDesc": "<b>{template}</b> 템플릿으로 연락처 <b>{count, number}</b>명에게 이 브로드캐스트를 보내려고 합니다. 이 작업은 되돌릴 수 없습니다.",
-        "zapiPacingHint": "간격 발송: 번호 차단 위험을 줄이기 위해 메시지가 {min}~{max}초 간격으로 하나씩 발송됩니다. 발송이 끝날 때까지 이 탭을 열어 두세요.",
+        "zapiPacingHint": "간격 발송: 번호 차단 위험을 줄이기 위해 메시지가 {min}~{max}초 간격으로 하나씩 발송됩니다. 발송이 끝날 때까지 이 탭을 열어 둔 채 화면 앞에 유지하세요(브라우저는 숨겨진 탭을 느리게 처리합니다).",
         "zapiPacingEstimate": "예상 소요 시간: 약 {minutes, number}분."
       }
     }
@@ -1549,7 +1549,7 @@
       "toastUploadSuccess": "파일이 업로드되었습니다.",
       "toastUploadFailed": "업로드에 실패했습니다.",
       "headerSampleAlt": "헤더 샘플",
-      "zapiBanner": "QR 코드 연결(Z-API): 템플릿은 여기에 저장되며 Meta를 거치지 않습니다. 메시지 본문만 전송되며 헤더, 푸터, 버튼은 사용되지 않습니다.",
+      "zapiBanner": "QR 코드 연결(Z-API): 템플릿은 여기에 저장되며 Meta를 거치지 않습니다. 메시지 본문만 전송되며 헤더, 푸터, 버튼은 사용되지 않습니다. 템플릿 이름에는 소문자, 숫자, _ 만 사용할 수 있습니다(예: promo_september).",
       "localBadge": "로컬 템플릿",
       "saveTemplate": "템플릿 저장",
       "toastLocalSaved": "템플릿이 저장되었습니다"

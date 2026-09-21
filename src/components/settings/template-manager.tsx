@@ -24,7 +24,7 @@ import {
   type MediaHeaderKind,
 } from '@/lib/whatsapp/media-header-types';
 import { useAuth } from '@/hooks/use-auth';
-import { useWhatsAppProvider } from '@/hooks/use-whatsapp-provider';
+import { useWhatsAppProviderState } from '@/hooks/use-whatsapp-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -136,8 +136,12 @@ export function TemplateManager() {
   const { user, loading: authLoading } = useAuth();
   // Z-API (QR code) accounts keep templates local: only the body text is
   // sent, so the Meta-only fields and controls are hidden. While the
-  // provider is loading (null) or is 'meta', the Meta UI renders unchanged.
-  const isZapi = useWhatsAppProvider() === 'zapi';
+  // provider is 'meta' the Meta UI renders unchanged. While the provider is
+  // still loading we render neither: a neutral skeleton for the form and
+  // no Meta-only controls, so a Z-API account never flashes the Meta UI.
+  const { provider, loading: providerLoading } = useWhatsAppProviderState();
+  const isZapi = provider === 'zapi';
+  const showMetaUi = !providerLoading && !isZapi;
 
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
@@ -542,7 +546,7 @@ export function TemplateManager() {
         description={t('description')}
         action={
           <div className="flex items-center gap-2">
-            {!isZapi && (
+            {showMetaUi && (
               <Button
                 variant="outline"
                 onClick={handleSyncFromMeta}
@@ -723,13 +727,19 @@ export function TemplateManager() {
             </DialogDescription>
           </DialogHeader>
 
-          {!isZapi && form.category === 'Authentication' && (
+          {showMetaUi && form.category === 'Authentication' && (
             <div className="flex items-start gap-2 rounded border border-amber-700/40 bg-amber-950/30 px-3 py-2 text-xs text-amber-300">
               <AlertCircle className="size-4 mt-0.5 shrink-0" />
               <p>{t.rich('authWarning', { bold: (chunks) => <strong>{chunks}</strong> })}</p>
             </div>
           )}
 
+          {providerLoading ? (
+            <div className="space-y-4 py-2" aria-busy="true">
+              <div className="h-9 animate-pulse rounded bg-muted" />
+              <div className="h-24 animate-pulse rounded bg-muted" />
+            </div>
+          ) : (
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('templateName')}</Label>
@@ -1133,6 +1143,7 @@ export function TemplateManager() {
             </>
             )}
           </div>
+          )}
 
           <DialogFooter className="bg-popover border-border">
             <Button
@@ -1144,7 +1155,11 @@ export function TemplateManager() {
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={submitting || (!isZapi && form.category === 'Authentication')}
+              disabled={
+                submitting ||
+                providerLoading ||
+                (!isZapi && form.category === 'Authentication')
+              }
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {submitting ? (

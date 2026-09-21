@@ -8,7 +8,7 @@ import {
   batchRetryDelayMs,
 } from '@/lib/broadcast-retry';
 import { normalizeKey } from '@/lib/contacts/dedupe';
-import { getAccountWhatsAppProvider } from '@/lib/whatsapp/provider';
+import { getAccountWhatsAppProvider } from '@/lib/whatsapp/account-provider';
 import { broadcastSendPlan, type PacingProviderKind } from '@/lib/whatsapp/send-pacing';
 import { Contact, MessageTemplate } from '@/types';
 
@@ -516,7 +516,25 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             ...(messageParams ? { messageParams } : {}),
           }));
 
-        if (apiRecipients.length === 0) continue;
+        if (apiRecipients.length === 0) {
+          // Nothing sendable in this batch (with Z-API's batch size of 1
+          // this is a phone-less recipient). Mirror broadcast-resume:
+          // stamp them failed instead of leaving them 'pending' forever.
+          for (const recipient of batch) {
+            failedCount++;
+            await supabase
+              .from('broadcast_recipients')
+              .update({
+                status: 'failed',
+                error_message: 'No valid phone number on contact',
+              })
+              .eq('id', recipient.id);
+          }
+          setProgress(
+            30 + Math.round(((i + batch.length) / totalRecipients) * 60)
+          );
+          continue;
+        }
 
         try {
           // Send the batch, waiting out a 429 rather than writing the

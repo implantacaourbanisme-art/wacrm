@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getAccountWhatsAppProvider } from './provider'
+import { getAccountWhatsAppProvider } from './account-provider'
 
 function mockSupabase(result: { data: unknown; error?: unknown }) {
   const calls: Array<[string, unknown]> = []
