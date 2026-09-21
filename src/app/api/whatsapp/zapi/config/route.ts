@@ -63,7 +63,7 @@ export async function POST(request: Request) {
 
     if (!instanceId || !instanceToken || !clientToken) {
       return NextResponse.json(
-        { error: 'instance_id, instance_token and client_token are all required' },
+        { error: 'instance_id, instance_token e client_token são todos obrigatórios' },
         { status: 400 }
       )
     }
@@ -80,13 +80,13 @@ export async function POST(request: Request) {
       .maybeSingle()
     if (claimedError) {
       console.error('[zapi/config] ownership check failed:', claimedError)
-      return NextResponse.json({ error: 'Failed to validate configuration' }, { status: 500 })
+      return NextResponse.json({ error: 'Falha ao validar a configuração' }, { status: 500 })
     }
     if (claimed) {
       return NextResponse.json(
         {
           error:
-            'This Z-API instance is already linked to another account on this deployment.',
+            'Esta instância do Z-API já está vinculada a outra conta neste ambiente.',
         },
         { status: 409 }
       )
@@ -167,7 +167,7 @@ export async function POST(request: Request) {
         .eq('account_id', accountId)
       if (updateError) {
         console.error('[zapi/config] update failed:', updateError)
-        return NextResponse.json({ error: 'Failed to save configuration' }, { status: 500 })
+        return NextResponse.json({ error: 'Falha ao salvar a configuração' }, { status: 500 })
       }
     } else {
       const { error: insertError } = await supabase
@@ -175,7 +175,7 @@ export async function POST(request: Request) {
         .insert({ account_id: accountId, user_id: userId, ...baseRow })
       if (insertError) {
         console.error('[zapi/config] insert failed:', insertError)
-        return NextResponse.json({ error: 'Failed to save configuration' }, { status: 500 })
+        return NextResponse.json({ error: 'Falha ao salvar a configuração' }, { status: 500 })
       }
     }
 

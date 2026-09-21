@@ -105,14 +105,14 @@ export async function POST(request: Request) {
     try {
       payload = (await request.json()) as TemplatePayload
     } catch {
-      return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
+      return NextResponse.json({ error: 'Corpo JSON inválido.' }, { status: 400 })
     }
 
     if (payload.category === 'Authentication') {
       return NextResponse.json(
         {
           error:
-            'AUTHENTICATION templates are not yet supported here — create them in Meta WhatsApp Manager and use "Sync from Meta".',
+            'Modelos AUTHENTICATION ainda não são suportados aqui — crie-os no Gerenciador do WhatsApp da Meta e use "Sincronizar com a Meta".',
         },
         { status: 400 },
       )
@@ -147,7 +147,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              'WhatsApp not configured. Connect your WhatsApp Business account in Settings first.',
+              'WhatsApp não configurado. Conecte primeiro sua conta do WhatsApp Business em Configurações.',
           },
           { status: 400 },
         )
@@ -156,7 +156,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
+              'ID da WABA (conta do WhatsApp Business) ausente. Reconecte sua conta em Configurações.',
           },
           { status: 400 },
         )
@@ -226,7 +226,7 @@ export async function POST(request: Request) {
       // so the user can recover via "Sync from Meta".
       return NextResponse.json(
         {
-          error: `Submitted to Meta but failed to save locally: ${upsertErr.message}. Run "Sync from Meta" to recover.`,
+          error: `Enviado à Meta, mas falhou ao salvar localmente: ${upsertErr.message}. Execute "Sincronizar com a Meta" para recuperar.`,
           meta_template_id: metaTemplateId,
         },
         { status: 500 },
@@ -253,7 +253,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : 'Failed to submit template.',
+          error instanceof Error ? error.message : 'Falha ao enviar o modelo.',
       },
       { status: 500 },
     )

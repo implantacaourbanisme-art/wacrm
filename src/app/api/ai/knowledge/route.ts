@@ -29,7 +29,7 @@ export async function GET() {
     if (error) {
       console.error('[ai/knowledge GET] error:', error)
       return NextResponse.json(
-        { error: 'Failed to load knowledge base' },
+        { error: 'Falha ao carregar a base de conhecimento' },
         { status: 500 },
       )
     }
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
     const content = typeof body?.content === 'string' ? body.content.trim() : ''
     if (!title || !content) {
       return NextResponse.json(
-        { error: 'title and content are required' },
+        { error: 'title e content são obrigatórios' },
         { status: 400 },
       )
     }
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     if (countError) {
       console.error('[ai/knowledge POST] count error:', countError)
       return NextResponse.json(
-        { error: 'Failed to validate knowledge base size' },
+        { error: 'Falha ao validar o tamanho da base de conhecimento' },
         { status: 500 },
       )
     }
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
     if (error || !doc) {
       console.error('[ai/knowledge POST] insert error:', error)
       return NextResponse.json(
-        { error: 'Failed to save document' },
+        { error: 'Falha ao salvar o documento' },
         { status: 500 },
       )
     }

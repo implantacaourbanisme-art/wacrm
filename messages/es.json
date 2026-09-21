@@ -1279,7 +1279,10 @@
       "statusActivated": "Flujo activado.",
       "statusArchived": "Archivado.",
       "statusDraft": "Guardado como borrador.",
-      "deleteConfirm": "¿Eliminar \"{name}\"? Todas las ejecuciones activas terminan de inmediato. No se puede deshacer."
+      "deleteConfirm": "¿Eliminar \"{name}\"? Todas las ejecuciones activas terminan de inmediato. No se puede deshacer.",
+      "saveFailed": "Error al guardar",
+      "statusUpdateFailed": "Error al actualizar el estado",
+      "deleteFailed": "Error al eliminar"
     },
     "summary": {
       "options": "{count} {count, plural, =1 {opción} other {opciones}}",

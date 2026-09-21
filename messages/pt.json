@@ -1279,7 +1279,10 @@
       "statusActivated": "Fluxo ativado.",
       "statusArchived": "Arquivado.",
       "statusDraft": "Salvo como rascunho.",
-      "deleteConfirm": "Excluir \"{name}\"? Todas as execuções ativas terminam imediatamente. Não é possível desfazer."
+      "deleteConfirm": "Excluir \"{name}\"? Todas as execuções ativas terminam imediatamente. Não é possível desfazer.",
+      "saveFailed": "Falha ao salvar",
+      "statusUpdateFailed": "Falha ao atualizar o status",
+      "deleteFailed": "Falha ao excluir"
     },
     "summary": {
       "options": "{count} {count, plural, =1 {opção} other {opções}}",

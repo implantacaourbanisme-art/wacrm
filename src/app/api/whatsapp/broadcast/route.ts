@@ -110,7 +110,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            'Provide either `recipients` (preferred) or `phone_numbers` — must be a non-empty array',
+            'Informe `recipients` (preferido) ou `phone_numbers` — deve ser uma lista não vazia',
         },
         { status: 400 }
       )
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
 
     if (!template_name) {
       return NextResponse.json(
-        { error: 'template_name is required' },
+        { error: 'template_name é obrigatório' },
         { status: 400 }
       )
     }
@@ -133,7 +133,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            'WhatsApp not configured. Please set up your WhatsApp integration first.',
+            'WhatsApp não configurado. Configure primeiro a integração com o WhatsApp.',
         },
         { status: 400 }
       )
@@ -162,7 +162,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            'Template row is malformed locally — run "Sync from Meta" in Settings to repair it before broadcasting.',
+            'O registro local do modelo está malformado — execute "Sincronizar com a Meta" em Configurações para corrigi-lo antes do disparo.',
         },
         { status: 500 },
       )
@@ -180,7 +180,7 @@ export async function POST(request: Request) {
         results.push({
           phone: recipient.phone,
           status: 'failed',
-          error: 'Invalid phone number format',
+          error: 'Formato de número de telefone inválido',
         })
         failedCount++
         continue

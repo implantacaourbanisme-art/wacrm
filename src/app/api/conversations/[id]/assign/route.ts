@@ -30,7 +30,7 @@ export async function POST(request: Request, { params }: Params) {
     const body = await request.json().catch(() => null)
     if (!body || (body.agent_id !== null && typeof body.agent_id !== 'string')) {
       return NextResponse.json(
-        { error: 'agent_id (string or null) is required' },
+        { error: 'agent_id (texto ou null) é obrigatório' },
         { status: 400 },
       )
     }
@@ -42,7 +42,7 @@ export async function POST(request: Request, { params }: Params) {
     })
 
     if (result.error) {
-      const status = result.error === 'Conversation not found' ? 404 : 500
+      const status = result.error === 'Conversa não encontrada' ? 404 : 500
       if (status === 500) console.error('[conversations/assign] update failed:', result.error)
       return NextResponse.json({ error: result.error }, { status })
     }

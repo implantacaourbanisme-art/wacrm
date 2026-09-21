@@ -127,7 +127,7 @@ export async function assignConversation(
     .maybeSingle()
 
   if (error) return { contactId: null, error: error.message }
-  if (!updated) return { contactId: null, error: 'Conversation not found' }
+  if (!updated) return { contactId: null, error: 'Conversa não encontrada' }
 
   if (args.agentId) {
     await dispatchConversationAssignedTrigger({

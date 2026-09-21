@@ -25,11 +25,11 @@ export async function GET() {
 
     if (error) {
       console.error('[zapi/status] config lookup failed:', error)
-      return NextResponse.json({ error: 'Failed to load configuration' }, { status: 500 })
+      return NextResponse.json({ error: 'Falha ao carregar a configuração' }, { status: 500 })
     }
     if (!config || !config.zapi_instance_id || !config.zapi_instance_token || !config.zapi_client_token) {
       return NextResponse.json(
-        { error: 'No Z-API connection saved for this account yet.' },
+        { error: 'Nenhuma conexão Z-API salva para esta conta ainda.' },
         { status: 404 }
       )
     }

@@ -75,7 +75,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            'A delivery pass is already running for this broadcast. Wait for it to finish before resuming again.',
+            'Já existe uma rodada de envio em andamento para este disparo. Aguarde a conclusão antes de retomar novamente.',
         },
         { status: 409 }
       );
