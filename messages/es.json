@@ -1541,7 +1541,8 @@
       "toastInvalidDocument": "El documento del encabezado debe ser un archivo PDF, Word, PowerPoint, Excel o de texto.",
       "toastMediaTooLarge": "El archivo pesa {size} MB; el límite de carga es {max} MB.",
       "toastUploadSuccess": "Archivo subido.",
-      "toastUploadFailed": "Error al subir."
+      "toastUploadFailed": "Error al subir.",
+      "headerSampleAlt": "Muestra del encabezado"
     },
     "roles": {
       "admin": "Administrador",
@@ -1758,7 +1759,8 @@
       "cancel": "Cancelar",
       "signingOut": "Cerrando sesión…",
       "signOutEverywhere": "Cerrar sesión en todas partes",
-      "signOutFailed": "Error al cerrar sesión: {message}"
+      "signOutFailed": "Error al cerrar sesión: {message}",
+      "namePlaceholder": "María García"
     },
     "appearance": {
       "title": "Apariencia",
@@ -1916,6 +1918,28 @@
       "editDoc": "Editar",
       "deleteDoc": "Eliminar",
       "loading": "Cargando…"
+    },
+    "quickReplies": {
+      "title": "Respuestas rápidas",
+      "description": "Fragmentos reutilizables — texto simple o un mensaje interactivo guardado — que los agentes pueden insertar desde el compositor de la bandeja de entrada.",
+      "new": "Nueva respuesta rápida",
+      "empty": "Aún no hay respuestas rápidas. Crea una para reutilizarla en las conversaciones.",
+      "edit": "Editar respuesta rápida",
+      "delete": "Eliminar respuesta rápida",
+      "editTitle": "Editar respuesta rápida",
+      "nameLabel": "Nombre",
+      "namePlaceholder": "p. ej. Horario de atención",
+      "kindText": "Texto",
+      "kindInteractive": "Interactiva",
+      "textPlaceholder": "El texto del mensaje a insertar",
+      "cancel": "Cancelar",
+      "save": "Guardar",
+      "nameRequired": "Ponle un nombre a la respuesta rápida.",
+      "saveFailed": "No se pudo guardar la respuesta rápida.",
+      "updated": "Respuesta rápida actualizada.",
+      "created": "Respuesta rápida creada.",
+      "confirmDelete": "¿Eliminar esta respuesta rápida?",
+      "deleteFailed": "No se pudo eliminar la respuesta rápida."
     }
   },
   "SignupPage": {

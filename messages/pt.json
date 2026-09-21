@@ -5,7 +5,7 @@
     "descAccept": "Entre e levaremos você até o convite.",
     "descWelcome": "Entre na sua conta",
     "emailLabel": "E-mail",
-    "emailPlaceholder": "you@example.com",
+    "emailPlaceholder": "voce@exemplo.com.br",
     "passwordLabel": "Senha",
     "forgotPassword": "Esqueceu a senha?",
     "passwordPlaceholder": "Digite sua senha",
@@ -1054,7 +1054,7 @@
         },
         "operandLabel": "Operando",
         "placeholderTime": "HH:mm-HH:mm",
-        "placeholderContact": "name / email / company",
+        "placeholderContact": "nome / e-mail / empresa",
         "placeholderTag": "id da tag",
         "urlLabel": "URL",
         "headersLabel": "Cabeçalhos",
@@ -1295,7 +1295,7 @@
       "opMissing": "ausente",
       "modeAdd": "Adicionar",
       "modeRemove": "Remover",
-      "tagPicked": "{mode} tag {tag}…",
+      "tagPicked": "{mode} a tag {tag}…",
       "tagNone": "{mode} tag (nenhuma escolhida)"
     },
     "header": {
@@ -1541,7 +1541,8 @@
       "toastInvalidDocument": "O documento do cabeçalho deve ser um arquivo PDF, Word, PowerPoint, Excel ou texto.",
       "toastMediaTooLarge": "O arquivo tem {size} MB — o limite de upload é {max} MB.",
       "toastUploadSuccess": "Arquivo enviado.",
-      "toastUploadFailed": "Falha no upload."
+      "toastUploadFailed": "Falha no upload.",
+      "headerSampleAlt": "Exemplo de cabeçalho"
     },
     "roles": {
       "admin": "Administrador",
@@ -1576,7 +1577,7 @@
       "notLive": "inativo",
       "apiCredentialsTitle": "Credenciais da API",
       "apiCredentialsDesc": "Informe suas credenciais da API do WhatsApp Business da Meta.",
-      "phoneNumberId": "Phone Number ID",
+      "phoneNumberId": "ID do número de telefone",
       "wabaId": "ID da conta do WhatsApp Business",
       "accessToken": "Token de acesso permanente",
       "accessTokenPlaceholder": "Informe seu token de acesso",
@@ -1649,7 +1650,7 @@
       "lastSaveFailed": "O último salvamento falhou",
       "metaErrorStep": "Etapa",
       "metaErrorCode": "Código de erro da Meta",
-      "metaErrorTrace": "Trace ID",
+      "metaErrorTrace": "ID de rastreio",
       "metaErrorMessage": "Resposta da Meta",
       "metaErrorDetailsHint": "Cite estes detalhes ao contatar o suporte da Meta.",
       "phoneNumberIdNotNumeric": "O Phone Number ID deve conter apenas dígitos. Copie o id numérico em Meta → WhatsApp → Configuração da API, não o número de telefone em si.",
@@ -1758,7 +1759,8 @@
       "cancel": "Cancelar",
       "signingOut": "Saindo…",
       "signOutEverywhere": "Sair de todos os lugares",
-      "signOutFailed": "Falha ao sair: {message}"
+      "signOutFailed": "Falha ao sair: {message}",
+      "namePlaceholder": "Maria Silva"
     },
     "appearance": {
       "title": "Aparência",
@@ -1916,6 +1918,28 @@
       "editDoc": "Editar",
       "deleteDoc": "Excluir",
       "loading": "Carregando…"
+    },
+    "quickReplies": {
+      "title": "Respostas rápidas",
+      "description": "Trechos reutilizáveis — texto simples ou uma mensagem interativa salva — que os atendentes podem inserir pelo campo de mensagem da caixa de entrada.",
+      "new": "Nova resposta rápida",
+      "empty": "Nenhuma resposta rápida ainda. Crie uma para reutilizá-la nas conversas.",
+      "edit": "Editar resposta rápida",
+      "delete": "Excluir resposta rápida",
+      "editTitle": "Editar resposta rápida",
+      "nameLabel": "Nome",
+      "namePlaceholder": "ex.: Horário de atendimento",
+      "kindText": "Texto",
+      "kindInteractive": "Interativa",
+      "textPlaceholder": "O texto da mensagem a ser inserida",
+      "cancel": "Cancelar",
+      "save": "Salvar",
+      "nameRequired": "Dê um nome à resposta rápida.",
+      "saveFailed": "Não foi possível salvar a resposta rápida.",
+      "updated": "Resposta rápida atualizada.",
+      "created": "Resposta rápida criada.",
+      "confirmDelete": "Excluir esta resposta rápida?",
+      "deleteFailed": "Não foi possível excluir a resposta rápida."
     }
   },
   "SignupPage": {
@@ -1931,7 +1955,7 @@
     "fullNameLabel": "Nome completo",
     "fullNamePlaceholder": "João Silva",
     "emailLabel": "E-mail",
-    "emailPlaceholder": "you@example.com",
+    "emailPlaceholder": "voce@exemplo.com.br",
     "passwordLabel": "Senha",
     "passwordPlaceholder": "Pelo menos 6 caracteres",
     "confirmPasswordLabel": "Confirmar senha",
@@ -1948,7 +1972,7 @@
     "title": "Redefinir senha",
     "desc": "Informe seu e-mail e enviaremos um link de redefinição",
     "emailLabel": "E-mail",
-    "emailPlaceholder": "you@example.com",
+    "emailPlaceholder": "voce@exemplo.com.br",
     "sending": "Enviando...",
     "sendLink": "Enviar link de redefinição"
   },
@@ -1999,11 +2023,11 @@
   "Agents": {
     "title": "Agentes de IA",
     "description": "Seu agente de IA com chave própria — configure-o e teste no playground antes que ele responda aos clientes na caixa de entrada.",
-    "tabPlayground": "Playground",
+    "tabPlayground": "Simulador",
     "tabSetup": "Configuração",
     "tabUsage": "Uso",
     "playground": {
-      "title": "Playground",
+      "title": "Simulador",
       "subtitle": "— teste respostas como se você fosse um cliente",
       "reset": "Reiniciar",
       "emptyTitle": "Envie uma mensagem para ver como seu agente responderia.",
