@@ -9,6 +9,7 @@ import {
   validateTemplatePayload,
   type TemplatePayload,
 } from '@/lib/whatsapp/template-validators'
+import { getAccountWhatsAppProvider } from '@/lib/whatsapp/provider'
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
 
@@ -99,7 +100,12 @@ export async function PATCH(
       return NextResponse.json({ error: 'Modelo não encontrado.' }, { status: 404 })
     }
 
-    if (!existing.meta_template_id) {
+    // Z-API accounts keep local-only templates (no Meta counterpart).
+    const isLocalZapi =
+      !existing.meta_template_id &&
+      (await getAccountWhatsAppProvider(supabase, accountId)) === 'zapi'
+
+    if (!existing.meta_template_id && !isLocalZapi) {
       return NextResponse.json(
         {
           error:
@@ -135,6 +141,42 @@ export async function PATCH(
         { error: e instanceof Error ? e.message : 'Validation failed.' },
         { status: 400 },
       )
+    }
+
+    if (isLocalZapi) {
+      const { data: localRow, error: localErr } = await supabase
+        .from('message_templates')
+        .update({
+          category: payload.category,
+          header_type: payload.header_type ?? null,
+          header_content: payload.header_content ?? null,
+          header_media_url: payload.header_media_url ?? null,
+          header_handle: payload.header_handle ?? null,
+          body_text: payload.body_text,
+          footer_text: payload.footer_text ?? null,
+          buttons: payload.buttons ?? null,
+          sample_values: payload.sample_values ?? null,
+          status: 'APPROVED',
+          submission_error: null,
+          rejection_reason: null,
+          last_submitted_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .eq('account_id', accountId)
+        .select()
+        .single()
+      if (localErr) {
+        return NextResponse.json(
+          { error: `Falha ao salvar o modelo: ${localErr.message}` },
+          { status: 500 },
+        )
+      }
+      return NextResponse.json({
+        success: true,
+        template: localRow,
+        dry_run: false,
+        local: true,
+      })
     }
 
     if (!isDryRun()) {

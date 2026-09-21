@@ -6,6 +6,7 @@ import {
   toErrorResponse,
 } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { getAccountWhatsAppProvider } from '@/lib/whatsapp/provider'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 import type { TemplateButton, TemplateSampleValues } from '@/types'
 
@@ -134,6 +135,16 @@ export async function POST() {
     // insert/update RLS policies (migration 017) both require 'admin'.
     // Resolving account_id off the profile only proved membership.
     const { supabase, accountId, userId } = await requireRole('admin')
+
+    if ((await getAccountWhatsAppProvider(supabase, accountId)) === 'zapi') {
+      return NextResponse.json(
+        {
+          error:
+            'A sincronização com a Meta não se aplica a conexões por QR Code (Z-API).',
+        },
+        { status: 400 },
+      )
+    }
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')

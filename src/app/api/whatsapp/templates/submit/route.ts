@@ -15,6 +15,7 @@ import {
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
+import { getAccountWhatsAppProvider } from '@/lib/whatsapp/provider'
 
 /**
  * Shared upsert payload builder — both the Meta-failure path and the
@@ -125,6 +126,32 @@ export async function POST(request: Request) {
         { error: e instanceof Error ? e.message : 'Validation failed.' },
         { status: 400 },
       )
+    }
+
+    // Z-API (QR Code) has no template system and nothing to approve: the
+    // template is a local catalog entry, stored APPROVED so Disparos can
+    // list it, with no Meta call at all.
+    if ((await getAccountWhatsAppProvider(supabase, accountId)) === 'zapi') {
+      const { data: localRow, error: localErr } = await upsertTemplateRow(
+        supabase,
+        buildUpsertRow(accountId, userId, payload, {
+          status: 'APPROVED',
+          metaTemplateId: null,
+          submissionError: null,
+        }),
+      )
+      if (localErr) {
+        return NextResponse.json(
+          { error: `Falha ao salvar o modelo: ${localErr.message}` },
+          { status: 500 },
+        )
+      }
+      return NextResponse.json({
+        success: true,
+        template: localRow,
+        dry_run: false,
+        local: true,
+      })
     }
 
     const dryRun =
