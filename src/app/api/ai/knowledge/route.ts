@@ -83,7 +83,7 @@ export async function POST(request: Request) {
     if ((existingCount ?? 0) >= MAX_KNOWLEDGE_DOCUMENTS_PER_ACCOUNT) {
       return NextResponse.json(
         {
-          error: `This account already has ${MAX_KNOWLEDGE_DOCUMENTS_PER_ACCOUNT} knowledge-base documents, the current limit. Delete or merge some before adding more.`,
+          error: `Esta conta já tem ${MAX_KNOWLEDGE_DOCUMENTS_PER_ACCOUNT} documentos na base de conhecimento, que é o limite atual. Exclua ou una alguns antes de adicionar mais.`,
         },
         { status: 400 },
       )
