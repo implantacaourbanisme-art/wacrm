@@ -24,6 +24,7 @@ import {
   type MediaHeaderKind,
 } from '@/lib/whatsapp/media-header-types';
 import { useAuth } from '@/hooks/use-auth';
+import { useWhatsAppProvider } from '@/hooks/use-whatsapp-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -133,6 +134,10 @@ export function TemplateManager() {
   const t = useTranslations('Settings.templates');
   const supabase = createClient();
   const { user, loading: authLoading } = useAuth();
+  // Z-API (QR code) accounts keep templates local: only the body text is
+  // sent, so the Meta-only fields and controls are hidden. While the
+  // provider is loading (null) or is 'meta', the Meta UI renders unchanged.
+  const isZapi = useWhatsAppProvider() === 'zapi';
 
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
@@ -220,6 +225,17 @@ export function TemplateManager() {
       sample_values.header = [form.header_sample.trim()];
     }
 
+    if (isZapi) {
+      return {
+        name: form.name.trim(),
+        category: 'Utility' as const,
+        language: form.language.trim() || 'en_US',
+        body_text: form.body_text.trim(),
+        sample_values:
+          Object.keys(sample_values).length > 0 ? sample_values : undefined,
+      };
+    }
+
     return {
       name: form.name.trim(),
       category: form.category,
@@ -266,7 +282,7 @@ export function TemplateManager() {
   async function handleSubmit() {
     // AUTHENTICATION is blocked by the persistent banner + disabled
     // submit button; this is a defensive second line of defense.
-    if (form.category === 'Authentication') return;
+    if (!isZapi && form.category === 'Authentication') return;
     try {
       setSubmitting(true);
       const isEdit = editingId !== null;
@@ -288,7 +304,9 @@ export function TemplateManager() {
       // immediately should not show a stale list.
       if (user) await fetchTemplates(user.id);
       toast.success(
-        data.dry_run
+        isZapi
+          ? t('toastLocalSaved')
+          : data.dry_run
           ? isEdit
             ? t('toastSaveEditDry')
             : t('toastSaveNewDry')
@@ -524,15 +542,17 @@ export function TemplateManager() {
         description={t('description')}
         action={
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleSyncFromMeta}
-              disabled={syncing}
-              title={t('syncTitle')}
-            >
-              <RefreshCw className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? t('syncing') : t('syncFromMeta')}
-            </Button>
+            {!isZapi && (
+              <Button
+                variant="outline"
+                onClick={handleSyncFromMeta}
+                disabled={syncing}
+                title={t('syncTitle')}
+              >
+                <RefreshCw className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? t('syncing') : t('syncFromMeta')}
+              </Button>
+            )}
             <Button onClick={openCreate}>
               <Plus className="size-4" />
               {t('newTemplate')}
@@ -540,6 +560,13 @@ export function TemplateManager() {
           </div>
         }
       />
+
+      {isZapi && (
+        <div className="flex items-start gap-2 rounded border border-blue-700/40 bg-blue-950/30 px-3 py-2 text-xs text-blue-300">
+          <AlertCircle className="size-4 mt-0.5 shrink-0" />
+          <p>{t('zapiBanner')}</p>
+        </div>
+      )}
 
       {templates.length === 0 ? (
         <Card>
@@ -555,26 +582,36 @@ export function TemplateManager() {
           {templates.map((template) => {
             const statusKey = template.status || 'DRAFT';
             const status = templateStatusConfig[statusKey];
+            // Z-API local row: no Meta review/quality/footer concepts.
+            const isLocalRow = isZapi && !template.meta_template_id;
             return (
               <Card key={template.id}>
                 <CardContent className="flex items-start justify-between pt-4">
                   <div className="space-y-2 min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-medium text-foreground">{template.name}</h3>
-                      <Badge
-                        className={`text-xs border ${categoryColors[template.category] || ''}`}
-                      >
-                        {template.category}
-                      </Badge>
-                      <Badge className={`text-xs border ${status.classes}`}>
-                        {status.label}
-                      </Badge>
+                      {isLocalRow ? (
+                        <Badge className="text-xs border bg-slate-600/20 text-muted-foreground border-slate-600/30">
+                          {t('localBadge')}
+                        </Badge>
+                      ) : (
+                        <>
+                          <Badge
+                            className={`text-xs border ${categoryColors[template.category] || ''}`}
+                          >
+                            {template.category}
+                          </Badge>
+                          <Badge className={`text-xs border ${status.classes}`}>
+                            {status.label}
+                          </Badge>
+                        </>
+                      )}
                       {template.language && (
                         <span className="text-xs text-muted-foreground uppercase">
                           {template.language}
                         </span>
                       )}
-                      {template.quality_score && (
+                      {!isLocalRow && template.quality_score && (
                         <span
                           className={`text-[10px] uppercase font-medium ${
                             template.quality_score === 'GREEN'
@@ -592,7 +629,7 @@ export function TemplateManager() {
                     <p className="text-sm text-muted-foreground line-clamp-2">
                       {template.body_text}
                     </p>
-                    {template.footer_text && (
+                    {!isLocalRow && template.footer_text && (
                       <p className="text-xs text-muted-foreground italic">
                         {template.footer_text}
                       </p>
@@ -620,7 +657,7 @@ export function TemplateManager() {
                         {t('edit')}
                       </Button>
                     )}
-                    {(statusKey === 'REJECTED' || statusKey === 'PAUSED') && (
+                    {!isLocalRow && (statusKey === 'REJECTED' || statusKey === 'PAUSED') && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -686,7 +723,7 @@ export function TemplateManager() {
             </DialogDescription>
           </DialogHeader>
 
-          {form.category === 'Authentication' && (
+          {!isZapi && form.category === 'Authentication' && (
             <div className="flex items-start gap-2 rounded border border-amber-700/40 bg-amber-950/30 px-3 py-2 text-xs text-amber-300">
               <AlertCircle className="size-4 mt-0.5 shrink-0" />
               <p>{t.rich('authWarning', { bold: (chunks) => <strong>{chunks}</strong> })}</p>
@@ -710,7 +747,8 @@ export function TemplateManager() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className={isZapi ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-2 gap-4'}>
+              {!isZapi && (
               <div className="space-y-2">
                 <Label className="text-muted-foreground">{t('category')}</Label>
                 <Select
@@ -738,6 +776,7 @@ export function TemplateManager() {
                   </SelectContent>
                 </Select>
               </div>
+              )}
 
               <div className="space-y-2">
                 <Label className="text-muted-foreground">{t('language')}</Label>
@@ -766,6 +805,7 @@ export function TemplateManager() {
               </div>
             </div>
 
+            {!isZapi && (
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('header')}</Label>
               <Select
@@ -897,6 +937,7 @@ export function TemplateManager() {
                 </div>
               )}
             </div>
+            )}
 
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('bodyText')}</Label>
@@ -941,6 +982,8 @@ export function TemplateManager() {
               )}
             </div>
 
+            {!isZapi && (
+            <>
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('footer')}</Label>
               <Input
@@ -1087,6 +1130,8 @@ export function TemplateManager() {
                 </div>
               )}
             </div>
+            </>
+            )}
           </div>
 
           <DialogFooter className="bg-popover border-border">
@@ -1099,14 +1144,16 @@ export function TemplateManager() {
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={submitting || form.category === 'Authentication'}
+              disabled={submitting || (!isZapi && form.category === 'Authentication')}
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {submitting ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  {editingId ? t('saving') : t('submitting')}
+                  {editingId || isZapi ? t('saving') : t('submitting')}
                 </>
+              ) : isZapi ? (
+                t('saveTemplate')
               ) : editingId ? (
                 t('saveResubmit')
               ) : (

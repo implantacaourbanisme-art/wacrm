@@ -1548,7 +1548,11 @@
       "toastMediaTooLarge": "File is {size} MB — the upload limit is {max} MB.",
       "toastUploadSuccess": "File uploaded.",
       "toastUploadFailed": "Upload failed.",
-      "headerSampleAlt": "Header sample"
+      "headerSampleAlt": "Header sample",
+      "zapiBanner": "QR Code connection (Z-API): templates are saved here and do not go through Meta. Only the message text is sent — header, footer and buttons are not used.",
+      "localBadge": "Local template",
+      "saveTemplate": "Save template",
+      "toastLocalSaved": "Template saved"
     },
     "roles": {
       "admin": "Admin",

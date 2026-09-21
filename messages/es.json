@@ -1548,7 +1548,11 @@
       "toastMediaTooLarge": "El archivo pesa {size} MB; el límite de carga es {max} MB.",
       "toastUploadSuccess": "Archivo subido.",
       "toastUploadFailed": "Error al subir.",
-      "headerSampleAlt": "Muestra del encabezado"
+      "headerSampleAlt": "Muestra del encabezado",
+      "zapiBanner": "Conexión por código QR (Z-API): las plantillas se guardan aquí y no pasan por Meta. Solo se envía el texto del mensaje; el encabezado, el pie y los botones no se usan.",
+      "localBadge": "Plantilla local",
+      "saveTemplate": "Guardar plantilla",
+      "toastLocalSaved": "Plantilla guardada"
     },
     "roles": {
       "admin": "Administrador",

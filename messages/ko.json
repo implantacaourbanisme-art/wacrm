@@ -1548,7 +1548,11 @@
       "toastMediaTooLarge": "파일 크기가 {size}MB입니다 — 업로드 제한은 {max}MB입니다.",
       "toastUploadSuccess": "파일이 업로드되었습니다.",
       "toastUploadFailed": "업로드에 실패했습니다.",
-      "headerSampleAlt": "헤더 샘플"
+      "headerSampleAlt": "헤더 샘플",
+      "zapiBanner": "QR 코드 연결(Z-API): 템플릿은 여기에 저장되며 Meta를 거치지 않습니다. 메시지 본문만 전송되며 헤더, 푸터, 버튼은 사용되지 않습니다.",
+      "localBadge": "로컬 템플릿",
+      "saveTemplate": "템플릿 저장",
+      "toastLocalSaved": "템플릿이 저장되었습니다"
     },
     "roles": {
       "admin": "관리자",

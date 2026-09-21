@@ -1548,7 +1548,11 @@
       "toastMediaTooLarge": "O arquivo tem {size} MB — o limite de upload é {max} MB.",
       "toastUploadSuccess": "Arquivo enviado.",
       "toastUploadFailed": "Falha no upload.",
-      "headerSampleAlt": "Exemplo de cabeçalho"
+      "headerSampleAlt": "Exemplo de cabeçalho",
+      "zapiBanner": "Conexão por QR Code (Z-API): os modelos são salvos aqui e não passam pela Meta. Só o texto da mensagem é enviado — cabeçalho, rodapé e botões não são usados.",
+      "localBadge": "Modelo local",
+      "saveTemplate": "Salvar modelo",
+      "toastLocalSaved": "Modelo salvo"
     },
     "roles": {
       "admin": "Administrador",
