@@ -272,3 +272,86 @@ A análise dos logs do contêiner em produção (`docker logs --tail 100 wacrm`)
 - **Renderização Dark Mode:** Em cartões com fundo escuro (`bg-card`), o texto da marca extraído com cor grafite original fica camuflado; por isso, geramos uma versão onde o símbolo preserva o verde-limão e o wordmark ganha tom branco nítido (`urbanisme-logo-white.png`).
 - **Deploy Zero-Downtime:** A esteira de `git push` + `docker compose build` + `docker compose up -d` na VPS Hostinger preserva todos os containers de banco de dados e Traefik sem interrupção de SSL ou de serviço.
 
+
+---
+
+## 12. Integração Bot n8n ↔ WACRM (2026-09-20)
+
+**Arquitetura (uma só instância Z-API `3EF092…`, compartilhada pelo bot e pelo WACRM):**
+- O **n8n é o único receptor** do webhook de mensagens recebidas da Z-API (`/webhook/urbanisme`). A Z-API guarda **uma URL por evento**: nunca parear o WACRM sem marcar **"Não registrar webhook (modo espelho)"** em Configurações > WhatsApp > Z-API, senão o webhook do bot é sobrescrito e o bot para (aconteceu em 19/09 às ~19h UTC e foi corrigido em 20/09).
+- Estado dos callbacks na Z-API: `received` → n8n (com `receiveCallbackSentByMe` ligado); `delivery` e `presence` limpos; `status/connected/disconnected` → WACRM. Conferir com `GET /instances/<id>/token/<token>/me` (Client-Token no header).
+- **Cópias de arquivos locais de workflows (`Workflows/*.json`) estão desatualizadas** (mostram a instância antiga `3F0FF…`); sempre ler o workflow vivo pela API do n8n.
+
+**A. Espelho do bot no Inbox:** nó `Espelhar no WACRM` no workflow `Urbanisme` (`ZfvZh0GieQujFa19PQXjq`), em paralelo ao `Webhook`, envia a cópia do payload para `https://urbanisme.cloud/api/whatsapp/zapi/webhook?mirror=1` com o header `client-token` (credencial n8n `WACRM Mirror (client-token)`). Modo espelho no WACRM: só grava contato/conversa/mensagem, sem Flows/Automações/IA/webhooks; `fromMe` vira mensagem `bot`. O `Filtro Inicial1` do bot descarta ecos `fromApi`. O WACRM mostra menus de lista/botões do bot como texto (`formatListMessage`).
+
+**B. Transbordo → WACRM e silêncio do bot:**
+- `POST /api/v1/handoffs` (escopo `conversations:write`): acha/cria contato+conversa, atribui ao membro pelo e-mail (Alisson, `joalyssoncleverton96@icloud.com`, papel agent), reabre e grava o resumo como nota. Nó `Criar caso no WACRM` no workflow `Transbordo` (`gx1ZB1uffIFcyCPs`), em paralelo; o **relatório por WhatsApp permanece** (decisão do usuário).
+- Evento de webhook `message.sent` (só quando um humano envia pelo Inbox) → workflow n8n `WACRM | Atendente respondeu` (`WKwnVZ5Zsck8B4C8`, caminho aleatório longo) → Redis `{telefone}_status = Desativado` TTL 900 s (mesma chave do Transbordo). Validado ponta a ponta com `558296004382`.
+
+**C. Sincronização de Leads:** `POST /api/v1/contacts/sync` (escopo `contacts:write`, até 100 por chamada, idempotente). CPF/CNPJ vai para o campo personalizado `CPF/CNPJ` (dígitos), exibido no sidebar do Inbox mascarado com olho e copiar. Workflow `Leads → WACRM (sync)` (`Bw3tVWUkE3ktytgL`): a cada 10 min + gatilho manual "Sincronizar agora"; agrupa Leads pelos **últimos 8 dígitos** do telefone (mesmo critério do WACRM) e envia só o de interação mais recente.
+
+**Chaves de API do WACRM:** "API-Handoff" (`conversations:write`), "API-Leads" (`contacts:write`); a "API-Webhooks" (`webhooks:manage`) foi temporária e deve ser revogada. Chaves só aparecem uma vez; revogar a antiga invalida a credencial n8n `WACRM API (Bearer)` (obsoleta, pode ser apagada).
+
+**Pendências / acompanhamentos:**
+- Máscara do CPF só no sidebar; a tela de detalhe do contato e as variáveis de disparo em massa mostram o valor em texto.
+- `send-carousel` do bot ainda aparece como "não suportado" no Inbox (formato do payload não mapeado).
+- Não há índice UNIQUE em `custom_fields (account_id, field_name)`; mitigado no código (só `CPF/CNPJ` é criado sob demanda).
+- Deploy do WACRM: SSH ao VPS está sem a chave do usuário (`Permission denied`); deploy feito pelo Web console da Hostinger: `cd /opt/wacrm && git pull origin main && cp .env.local .env && docker compose build && docker compose up -d`.
+- Falhas de teste pré-existentes e não relacionadas: `src/lib/currency.test.ts` e `src/lib/dashboard/date-utils.test.ts` (dependem do locale).
+- Specs e planos: `docs/superpowers/specs/` e `docs/superpowers/plans/` (2026-09-20-*).
+
+### 12.1 Funis por setor, negócio automático e correções do bot (2026-09-20/21)
+- **Pipelines do WACRM (contas de teste = Urbanisme):** `Vendas` (Contato inicial → Visita agendada → Proposta → Negociação → Contrato; padrão = o mais antigo), `Financeiro` (Solicitação recebida → Em análise → Aguardando cliente → Resolvido) e `Jurídico` (Recebido → Em análise → Parecer → Concluído). A **última etapa conta como "ganho" por posição** (não pelo nome). O modelo de novos pipelines no código também está em português.
+- **`POST /api/v1/handoffs` ganhou `create_deal`, `deal_title`, `deal_pipeline`:** abre negócio na 1ª etapa do funil escolhido pelo NOME (sem fallback: nome inexistente => sem negócio), moeda da conta, valor 0, status `open` (o CHECK só aceita open/won/lost), `assigned_to` = `profiles.id`; reaproveita negócio aberto do contato no mesmo funil.
+- **Regra do Transbordo (nó `Criar caso no WACRM`):** o setor vem do ÚLTIMO menu no histórico do relatório (`Acessou o Menu Comercial|Financeiro` ou linha `Jurídico`) ou de "corretor" na mensagem. Comercial → Vendas; Financeiro → funil Financeiro (`Financeiro — Nome`); Jurídico → funil Jurídico; sem menu => sem negócio.
+- **Bug do Transbordo corrigido:** o `Merge` sobrescrevia `id`/`created_at` das linhas de `n8n_chat_histories` com os do Lead, então "as últimas 20 mensagens" eram aleatórias/antigas (relatório desatualizado e setor errado). O nó `Code in JavaScript` agora lê `$('Get many rows')` e `$('Buscar lead')` diretamente.
+- **Loop do Boleto corrigido:** `Aguardando Boleto?` exigia também CPF/e-mail na mensagem (sobra do fluxo antigo); com cadastro completo a resposta caía na IA e ela repetia "qual o assunto". A condição extra foi removida (igual a Demonstrativo/Jurídico).
+- **Trava anti-loop no Financeiro:** depois que o ramo "Falar com atendente" (fallback do `Switch1`) pergunta o assunto, o nó `Aguardar assunto (trava anti-loop)` grava `{tel}_aguardando_boleto` (TTL 300 s) e a próxima resposta vai direto ao Transbordo. Só marca quando `É pedido de atendente?` (não é saudação nem mensagem curta), para que um desvio da IA com "oi" não gere transferência indevida.
+- **Risco conhecido:** a IA (`AI Agent1`) pode rotear "oi" para a ferramenta errada (`enviar_menu_financeiro`) quando o histórico de chat do número está poluído; a saudação determinística ainda não foi implementada.
+- **Limpar o silêncio do bot de um número de teste:** workflow temporário com Webhook → Redis DELETE com a chave FIXA `558296004382_status`, executado e removido (nunca aceitar chave vinda de fora).
+- Backups dos workflows editados ficam no scratchpad da sessão; a cópia local `Workflows/*.json` continua desatualizada.
+
+---
+
+## 13. Integração Google Calendar & Painel de Agenda no Dashboard (2026-09-30)
+
+### 1. Atualização dos Nós no n8n (Agendamento IA)
+- **Workflow:** `Urbanisme | Sub | Agendamento IA` (`QQ8lBCcB9hG4VE1K`).
+- **Nós Atualizados:** `buscar_eventos`, `criar_evento` e `deletar_evento`.
+- **Alteração Realizada:** O identificador da agenda foi atualizado de `altodasarapiracas@gmail.com` para **`implantacaourbanisme@gmail.com`** tanto na tabela `workflow_entity` quanto na `workflow_history` do SQLite interno do n8n.
+- **Credencial Ativa:** `v1b9CoCqG4DzmAnM` ("Urbanisme", tipo `googleCalendarOAuth2Api`), conectada e autenticada com sucesso pelo usuário via OAuth2.
+- **Validação:** Token renovado via `oauth2.googleapis.com` com status HTTP 200 OK e listagem de eventos operando normalmente.
+
+### 2. Novo Módulo e Painel de Agenda no WACRM
+- **Serviço de Integração (`src/lib/calendar/google-calendar.ts`):**
+  - Autenticação server-side com Google OAuth2 utilizando `GOOGLE_CALENDAR_REFRESH_TOKEN`, `CLIENT_ID` e `CLIENT_SECRET`.
+  - Cache em memória do token de acesso para evitar requisições redundantes de refresh.
+  - Normalizador inteligente de eventos: extrai Nome do Cliente, Loteamento/Serviço e Telefone (a partir de títulos como `Visita Jatobá — Nome` ou metadados na descrição).
+  - Agrupamento temporal (`groupEventsByDay`) formatando cabeçalhos no padrão exato solicitado (`HOJE · X HORÁRIOS`, `QUARTA-FEIRA · 19/08/2026 · X HORÁRIOS`).
+- **Rota de API (`src/app/api/calendar/events/route.ts`):**
+  - `GET`: Retorna eventos e grupos ordenados cronologicamente, com suporte a filtros de período (`startDate`, `endDate`).
+  - `POST`: Criação rápida de novos agendamentos na agenda oficial diretamente pelo CRM.
+- **Página de Agenda (`src/app/(dashboard)/agenda/page.tsx`):**
+  - Visual idêntico ao modelo de referência da clínica/imobiliária:
+    - Badge verde-lima com horário de início em destaque e término logo abaixo.
+    - Bloco com nome do cliente em negrito, serviço/loteamento e telefone.
+    - Ações rápidas no modal de detalhes: botão para abrir a conversa no Inbox (`/inbox?phone=...`) ou no WhatsApp Web.
+    - Filtros por período (Hoje, Próximos 7 dias, Próximos 30 dias).
+    - Botão "Sincronizar" com feedback visual de carregamento.
+    - Modal de "Novo Agendamento" para criação rápida direto pelo CRM.
+    - Link direto para abrir a agenda no Google Agenda web.
+- **Navegação & i18n:**
+  - Item "Agenda" inserido na barra lateral (`sidebar.tsx`) com ícone `Calendar`.
+  - Traduções adicionadas nos catálogos `pt.json`, `en.json`, `es.json` e `ko.json`.
+- **Deploy em Produção:**
+  - Código compilado sem erros no TypeScript (`tsc --noEmit`) e validado por testes unitários (`google-calendar.test.ts`).
+  - Commit e push realizados para `origin/main`.
+  - Imagem Docker reconstruída e container `wacrm` reiniciado em produção na VPS Hostinger com status `healthy`.
+  - Rota `https://urbanisme.cloud/agenda` ativa e respondendo HTTP/2 200.
+
+---
+
+## 14. Aprendizados (DOE Protocol) — 2026-09-30
+- **Ciclo de Vida do OAuth do Google:** Em projetos do Google Cloud em modo de "Teste", o `refresh_token` expira compulsoriamente a cada 7 dias. Para conexões corporativas duradouras, o projeto deve ser alternado para "Em produção" na tela de consentimento OAuth do Google Console.
+- **Persistência de Workflows no n8n v2:** Ao atualizar nós diretamente na base de dados do n8n, é essencial atualizar tanto a tabela `workflow_entity` quanto a `workflow_history`, pois o motor do n8n e o comando de exportação utilizam a versão registrada no histórico para montagem dos nós.
+- **Resiliência no Next.js App Router:** No Next.js 16 com Turbopack, chamadas a APIs externas com dados em tempo real devem especificar explicitamente `cache: "no-store"` para evitar que agendamentos criados externamente sejam ocultados pelo cache de rotas.
