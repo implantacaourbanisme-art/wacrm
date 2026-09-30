@@ -19,6 +19,7 @@
     "primaryNav": "Primary",
     "dashboard": "Dashboard",
     "inbox": "Inbox",
+    "agenda": "Calendar",
     "notifications": "Notifications",
     "contacts": "Contacts",
     "pipelines": "Pipelines",
@@ -44,6 +45,7 @@
   "Header": {
     "dashboard": "Dashboard",
     "inbox": "Inbox",
+    "agenda": "Calendar",
     "notifications": "Notifications",
     "contacts": "Contacts",
     "pipelines": "Pipelines",

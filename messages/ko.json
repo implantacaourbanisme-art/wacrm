@@ -19,6 +19,7 @@
     "primaryNav": "기본 메뉴",
     "dashboard": "대시보드",
     "inbox": "인박스",
+    "agenda": "일정",
     "notifications": "알림",
     "contacts": "연락처",
     "pipelines": "파이프라인",
@@ -44,6 +45,7 @@
   "Header": {
     "dashboard": "대시보드",
     "inbox": "인박스",
+    "agenda": "일정",
     "notifications": "알림",
     "contacts": "연락처",
     "pipelines": "파이프라인",
