@@ -355,3 +355,55 @@ A análise dos logs do contêiner em produção (`docker logs --tail 100 wacrm`)
 - **Ciclo de Vida do OAuth do Google:** Em projetos do Google Cloud em modo de "Teste", o `refresh_token` expira compulsoriamente a cada 7 dias. Para conexões corporativas duradouras, o projeto deve ser alternado para "Em produção" na tela de consentimento OAuth do Google Console.
 - **Persistência de Workflows no n8n v2:** Ao atualizar nós diretamente na base de dados do n8n, é essencial atualizar tanto a tabela `workflow_entity` quanto a `workflow_history`, pois o motor do n8n e o comando de exportação utilizam a versão registrada no histórico para montagem dos nós.
 - **Resiliência no Next.js App Router:** No Next.js 16 com Turbopack, chamadas a APIs externas com dados em tempo real devem especificar explicitamente `cache: "no-store"` para evitar que agendamentos criados externamente sejam ocultados pelo cache de rotas.
+
+---
+
+## 15. Dinâmica de Agendamento no WhatsApp (n8n) & Capacidades do Agente (2026-10-01)
+
+### 1. Inclusão de "Agendamento" no Menu Inicial e Reenvio
+- **Workflow `Boas Vindas` (`bbQHAdvY9bGFLzbGmVIFn`):**
+  - Adicionada a opção `Agendamento` com a descrição `"Agendar, consultar ou desmarcar visita"`.
+  - O menu principal via WhatsApp agora apresenta 4 opções claras e objetivas:
+    1. `Comercial`
+    2. `Agendamento`
+    3. `Financeiro`
+    4. `Jurídico`
+- **Workflow Principal `Urbanisme` (`ZfvZh0GieQujFa19PQXjq`):**
+  - Atualizados os nós `Z-API Reenviar Menu Inicial` e `Z-API Reenviar Menu Inicial1` com as mesmas 4 opções sincronizadas.
+
+### 2. Roteamento Determinístico e Sessão de Agendamento
+- **Nó `If2`:**
+  - Atualizado para interceptar `Agendamento`, `agendamento`, `Agendar` e `Agendar Visita`, direcionando sem latência para o `Switch`.
+- **Nó `Switch`:**
+  - Regra 3 (`Agendar com Corretor`) atualizada com a condição:
+    `{{ ['Agendar Visita', 'Agendamento', 'agendamento', 'Agendar'].includes(($json.message || '').trim()) }}`
+  - Aciona diretamente o sub-workflow `Urbanisme | Sub | Agendamento IA` (`QQ8lBCcB9hG4VE1K`), ativando a flag `aguardando_agendamento:{telefone}` (TTL 300s) no Redis para manter a sessão do cliente até a finalização do atendimento.
+
+### 3. Agente Inteligente Dama & Ferramentas Google Calendar
+- **Identidade da Marca:** Atualizado para "Urbanisme Empreendimentos" com catálogo de loteamentos oficiais (Jatobá, Flor de Maria, Alto das Arapiracas, Flor do Ipê, Alto do Morro).
+- **Cobertura Completa das 4 Intenções do Usuário:**
+  1. **Disponibilidade e Novo Agendamento:**
+     - Agente pergunta o loteamento e o horário desejado.
+     - Consulta eventos existentes com a ferramenta `buscar_eventos` na API do Google Calendar.
+     - Propõe opções e só cria o evento com `criar_evento` após o aceite do cliente.
+     - Finaliza com marcador estruturado: `[[CONFIRMADO]][[DADOS:{"loteamento":"...","data_hora":"..."}]]`.
+  2. **Desmarcar / Cancelar Visita:**
+     - Agente consulta a agenda com `buscar_eventos` pelo telefone/nome do cliente.
+     - Localiza o ID do evento, pede confirmação e invoca `deletar_evento`.
+     - Confirma com o cliente e finaliza com `[[ENCERRADO]]`.
+  3. **Remarcação de Visita:**
+     - Localiza o agendamento atual com `buscar_eventos`.
+     - Checa a nova data/horário com `buscar_eventos`.
+     - Exclui o antigo (`deletar_evento`) e cadastra o novo (`criar_evento`).
+     - Finaliza com `[[CONFIRMADO]][[DADOS:...]]`.
+  4. **Notificação e Localização:**
+     - Ao confirmar, o sub-workflow envia as coordenadas do escritório/estande via WhatsApp (`send-location`).
+     - Corrigido o `Client-Token` em `Z-API Enviar Localização` para o token oficial (`F1e7350a95c864b6aa27acc32f32c73f6S`), eliminando risco de rejeição 401.
+     - O agendamento é registrado no banco `agendamentos` e aparece imediatamente no painel de Agenda do CRM.
+
+---
+
+## 16. Aprendizados (DOE Protocol) — 2026-10-01
+- **Roteamento Híbrido Determinístico + Semântico:** Em bots de WhatsApp com menus de botões e listas, escolhas estruturadas devem ser roteadas deterministicamente por nós `If` e `Switch` antes de chegarem ao agente de IA, garantindo tempo de resposta sub-segundo e eliminando alucinações de roteamento.
+- **Sessões Conversacionais Efêmeras no Redis:** A utilização de flags de sessão com TTL (ex: `aguardando_agendamento:{telefone}` com 300 segundos e renovação automática) garante que o cliente converse continuamente com o agente especializado sem a necessidade de repetir o menu a cada frase.
+- **Piping em Scripts SSH Remotos:** Ao atualizar estruturas complexas com JSON e templates no n8n via SSH, utilizar `stream.write` em vez de passar argumentos inline no bash evita problemas de escape com caracteres especiais (`$`, backticks, aspas duplas e quebras de linha).
