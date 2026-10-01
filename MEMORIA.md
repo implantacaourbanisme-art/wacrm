@@ -407,3 +407,26 @@ A análise dos logs do contêiner em produção (`docker logs --tail 100 wacrm`)
 - **Roteamento Híbrido Determinístico + Semântico:** Em bots de WhatsApp com menus de botões e listas, escolhas estruturadas devem ser roteadas deterministicamente por nós `If` e `Switch` antes de chegarem ao agente de IA, garantindo tempo de resposta sub-segundo e eliminando alucinações de roteamento.
 - **Sessões Conversacionais Efêmeras no Redis:** A utilização de flags de sessão com TTL (ex: `aguardando_agendamento:{telefone}` com 300 segundos e renovação automática) garante que o cliente converse continuamente com o agente especializado sem a necessidade de repetir o menu a cada frase.
 - **Piping em Scripts SSH Remotos:** Ao atualizar estruturas complexas com JSON e templates no n8n via SSH, utilizar `stream.write` em vez de passar argumentos inline no bash evita problemas de escape com caracteres especiais (`$`, backticks, aspas duplas e quebras de linha).
+
+---
+
+## 17. Correção Crítica no Agente Dama (Sub-Workflow de Agendamento) — 2026-10-01
+
+### 1. Diagnóstico do Problema ("cliquei em agendamento e não aconteceu nada")
+- **Execuções Analisadas no n8n:** Execução 2114 (`Urbanisme` - Main) e Execução 2115 (`Urbanisme | Sub | Agendamento IA`).
+- **Comportamento do Roteamento:** O roteamento determinístico funcionou perfeitamente: Webhook -> Lead -> Buffer -> If2 -> Switch (Regra 3) -> Sub-workflow de Agendamento.
+- **Causa Raiz da Falha:**
+  - O nó de modelo `@n8n/n8n-nodes-langchain.lmChatOpenAi` ("OpenAI gpt-4o-mini") no sub-workflow `QQ8lBCcB9hG4VE1K` não possuía o parâmetro `model` configurado explicitamente no JSON de parâmetros, mantendo apenas `options.temperature: 0.3`.
+  - No n8n v2.42, nós LangChain sem seleção explícita de modelo adotam dinamicamente a primeira opção da lista alfabética retornada pela API da OpenAI (família de raciocínio `o1` / `o1-mini`).
+  - Como a família `o1` não aceita alteração de temperatura (apenas o padrão 1), a chamada para a API da OpenAI rejeitou a requisição com o erro HTTP `400 Unsupported value: 'temperature' does not support 0.3 with this model. Only the default (1) value is supported`.
+  - Este erro 400 abortou a execução do `Agente Dama` antes de qualquer envio de mensagem para o WhatsApp via Z-API.
+
+### 2. Ação Corretiva Aplicada
+- **Workflow de Agendamento (`QQ8lBCcB9hG4VE1K`):**
+  - O nó de modelo foi atualizado para `typeVersion: 1.3`, com modelo explícito `gpt-4o` (`cachedResultName: "gpt-4o"`), credencial `jN8b5gyKK7r2CMmS` e temperatura `0.2`.
+- **Prevenção no Workflow Financeiro (`97pEDuouJdDKgJRv`):**
+  - O mesmo nó no sub-workflow de Financeiro também não possuía modelo explícito. Foi atualizado preventivamente para `gpt-4o` com `typeVersion: 1.3` e temperatura `0.2`.
+- **Limpeza de Containers & Atualização Swarm:**
+  - O container zumbi legado `a43eb73523a0` (`n8n:2.39.2`) foi removido.
+  - O serviço oficial Docker Swarm (`n8n_n8n`) foi reiniciado via `docker service update --force n8n_n8n`.
+  - O novo container ativo (`f8b546c35d0b`) validou a carga dos novos nós em tempo real com status operacional e sem erros.
