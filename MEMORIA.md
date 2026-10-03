@@ -430,3 +430,11 @@ A análise dos logs do contêiner em produção (`docker logs --tail 100 wacrm`)
   - O container zumbi legado `a43eb73523a0` (`n8n:2.39.2`) foi removido.
   - O serviço oficial Docker Swarm (`n8n_n8n`) foi reiniciado via `docker service update --force n8n_n8n`.
   - O novo container ativo (`f8b546c35d0b`) validou a carga dos novos nós em tempo real com status operacional e sem erros.
+
+---
+
+## 18. Aprendizados e Protocolos Operacionais (DOE Protocol) — 2026-10-03
+
+- **Resolução de Modelos em Nós LangChain no n8n v2:** Nós de modelo LLM (`lmChatOpenAi`) no n8n nunca devem ser deixados sem a propriedade `model` explicitamente parametrizada. O n8n v2 ordena os modelos alfabeticamente pela API do provedor e, na ausência de seleção explícita, adota a primeira opção da lista (`o1` / `o1-mini` da OpenAI), gerando incompatibilidade imediata com parâmetros de `temperature` diferentes de 1. Sempre declarar explicitamente o modelo canônico (`gpt-4o` ou `gpt-4o-mini`) com `typeVersion: 1.3`.
+- **Higiene de Instâncias no Docker Swarm:** Ambientes gerenciados por Docker Swarm (como Easypanel) podem reter containers antigos em estado ativo se manipulados isoladamente via `docker restart`. Para aplicar alterações de configuração e banco com segurança sem risco de split-brain, a reinicialização deve ser sempre realizada via `docker service update --force <service_name>`, garantindo a limpeza prévia de instâncias legadas.
+- **Rastreabilidade de Execuções n8n via Banco Interno:** A inspeção direta das tabelas `execution_entity` e `execution_data` no SQLite interno do n8n permite identificar com precisão cirúrgica erros em nós intermediários (`NodeApiError`, 400 Bad Request, falha de parse de ferramentas) mesmo quando o webhook inicial respondeu com 200 OK.
